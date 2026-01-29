@@ -15,12 +15,15 @@ import {
   PieChart,
   ArrowLeft,
   Download,
-  AlertCircle
+  AlertCircle,
+  Sparkles
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { format } from 'date-fns';
 // Fix: Import locale directly from its specific path to ensure compatibility and correct symbol lookup
 import { ptBR } from 'date-fns/locale/pt-BR';
+// Fix: Use the correct import for GoogleGenAI from @google/genai
+import { GoogleGenAI } from "@google/genai";
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -29,6 +32,10 @@ const App: React.FC = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // States for AI Analysis
+  const [aiAnalysis, setAiAnalysis] = useState<string>('');
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   const [prodData, setProdData] = useState<Partial<ProductionRecord>>({
     maquina: '',
@@ -179,6 +186,43 @@ const App: React.FC = () => {
       setError('Erro ao carregar registros.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Logic to handle AI Analysis of records
+  const handleAnalyzeWithAI = async () => {
+    if (records.length === 0) {
+      setError('Carregue os registros primeiro para realizar a análise.');
+      return;
+    }
+    setIsAnalyzing(true);
+    setAiAnalysis('');
+    try {
+      // Use the correct model for complex reasoning and follow initialization guidelines
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      
+      // Preparing a subset of data to avoid token limits while providing context
+      const sampleData = records.slice(0, 10).map(r => ({
+        maq: r.maquina,
+        op: r.op,
+        qtd: r.quantity,
+        prod_time: formatDuration(r.durationSeconds),
+        setup_time: formatDuration(r.setupDurationSeconds),
+        obs: r.observation
+      }));
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-pro-preview',
+        contents: `Analise os seguintes registros de produção da IMEK Sleeve (usinagem e manutenção) e forneça insights sobre produtividade, possíveis gargalos em máquinas específicas e sugestões de otimização de setup. Retorne o resultado formatado em Markdown e em português.
+        Dados: ${JSON.stringify(sampleData)}`,
+      });
+
+      setAiAnalysis(response.text || 'Não foi possível gerar insights no momento.');
+    } catch (err: any) {
+      console.error(err);
+      setError('Erro ao processar análise com IA: ' + (err.message || 'Erro de conexão'));
+    } finally {
+      setIsAnalyzing(false);
     }
   };
 
@@ -343,7 +387,7 @@ const App: React.FC = () => {
                </button>
 
                <button 
-                onClick={() => setStep(AppStep.ANALYSIS)}
+                onClick={() => { loadAdminRecords(); setStep(AppStep.ANALYSIS); }}
                 className="w-full flex items-center gap-4 p-5 bg-white rounded-2xl border border-gray-200 hover:bg-gray-50 transition-all text-left"
                >
                  <div className="bg-orange-500 p-3 rounded-xl text-white shadow-md">
@@ -351,7 +395,7 @@ const App: React.FC = () => {
                  </div>
                  <div>
                    <span className="block font-bold text-gray-900">Análise dos Apontamentos</span>
-                   <span className="text-xs text-gray-500">Relatórios detalhados</span>
+                   <span className="text-xs text-gray-500">Insights inteligentes com IA</span>
                  </div>
                </button>
             </div>
@@ -363,15 +407,53 @@ const App: React.FC = () => {
                  <button onClick={() => setStep(AppStep.GESTÃO_PRODUCAO)} className="p-2 bg-gray-100 rounded-full">
                     <ArrowLeft size={16} />
                  </button>
-                 <h2 className="text-xl font-bold text-gray-800">Análise de Dados</h2>
+                 <h2 className="text-xl font-bold text-gray-800">Análise de IA</h2>
                </div>
 
-               <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
-                  <div className="bg-amber-100 p-6 rounded-full text-amber-600">
-                    <AlertCircle size={48} />
-                  </div>
-                  <h3 className="text-2xl font-bold text-gray-800">Página em Construção</h3>
-                  <p className="text-gray-500 max-w-[250px]">Estamos trabalhando para trazer as melhores visualizações de dados para você.</p>
+               <div className="space-y-4">
+                  <button 
+                    onClick={handleAnalyzeWithAI}
+                    disabled={isAnalyzing || records.length === 0}
+                    className="w-full bg-indigo-600 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-indigo-100 transition-all hover:bg-indigo-700 active:scale-95 disabled:opacity-50"
+                  >
+                    {isAnalyzing ? (
+                      <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        <span>Processando Dados...</span>
+                      </div>
+                    ) : (
+                      <>
+                        <Sparkles size={20} />
+                        Gerar Insights com IA
+                      </>
+                    )}
+                  </button>
+
+                  {aiAnalysis && (
+                    <div className="bg-white border border-indigo-100 rounded-2xl p-5 shadow-sm animate-in fade-in slide-in-from-bottom-2">
+                      <div className="flex items-center gap-2 text-indigo-700 font-bold mb-3">
+                        <PieChart size={18} />
+                        <h3>Insights Operacionais</h3>
+                      </div>
+                      <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+                        {aiAnalysis}
+                      </div>
+                    </div>
+                  )}
+
+                  {!aiAnalysis && !isAnalyzing && records.length > 0 && (
+                    <div className="flex flex-col items-center justify-center py-12 text-center text-gray-400">
+                      <LayoutDashboard size={48} className="mb-4 opacity-20" />
+                      <p className="text-sm">Clique no botão para que a IA analise o histórico recente de produção.</p>
+                    </div>
+                  )}
+
+                  {records.length === 0 && !loading && (
+                    <div className="p-4 bg-amber-50 rounded-xl border border-amber-100 text-amber-700 text-xs flex items-center gap-2">
+                      <AlertCircle size={14} />
+                      Nenhum dado carregado para análise. Volte e carregue os registros.
+                    </div>
+                  )}
                </div>
             </div>
           )}
