@@ -1,21 +1,20 @@
 # Histórico de Desenvolvimento - IMEK Gestão de Produção
 
+## Versão 1.4.5 - Blindagem do Marco Temporal (StartTime)
+- **Data**: 29 de Janeiro de 2026
+- **Mudanças principais**:
+    - **Refatoração de Estado**: O `startTime` foi removido do objeto parcial `prodData` e movido para um estado independente (`productionStartTime`). Isso impede que atualizações em outros campos do formulário (como OP, CP ou Quantidade) resetem acidentalmente o horário de início por falhas de referência de estado.
+    - **Integridade de Dados**: Agora o sistema utiliza estados blindados para os marcos temporais (`productionStartTime` e `productionEndTime`), garantindo que o valor capturado no clique inicial chegue intacto ao Firebase.
+    - **Display de Relatórios**: Ajustada a tabela de registros salvos para exibir o horário baseado no `startTime` real do banco de dados, não no timestamp de gravação.
+
 ## Versão 1.4.4 - Solução Definitiva para Integridade de Dados
 - **Data**: 29 de Janeiro de 2026
 - **Mudanças principais**:
-    - Substituição de atualizações de estado diretas por atualizações funcionais (`setProdData(prev => ...)`). Esta mudança é crítica para evitar que o `startTime` seja sobrescrito por valores padrão (0) quando o usuário preenche campos como OP ou CP.
-    - Alteração da inicialização do `startTime` para `undefined`, permitindo uma validação mais robusta antes do salvamento.
-    - Adição de trava de segurança no `saveRecord` que bloqueia gravações com horário de início inválido.
-    - Refatoração dos handlers `onChange` para garantir imutabilidade total do objeto de registro de produção.
-
-## Versão 1.4.3 - Refinamento Crítico de Integridade Temporal
-- **Data**: 29 de Janeiro de 2026
-- **Mudanças principais**:
-    - Reescrita da lógica de captura do `startTime`: agora o marco inicial é capturado no milissegundo exato do clique em "Iniciar Setup" ou "Iniciar Produção".
-    - O fluxo de transição Setup -> Produção agora preserva o marco inicial da atividade inteira.
+    - Substituição de atualizações de estado diretas por atualizações funcionais.
+    - Adição de travas de segurança no `saveRecord`.
 
 ## Versão 1.4.0 - Expansão do Módulo de Gestão
 - **Data**: 29 de Janeiro de 2026
 - **Mudanças principais**:
-    - Reestruturação do fluxo do Administrador: Agora permite escolher entre "Apontamento" e "Gestão".
-    - Implementação da tela de Gestão com integração Gemini 3 Pro.
+    - Reestruturação do fluxo do Administrador: Apontamento vs Gestão.
+    - Integração Gemini 3 Pro para análise de performance.
