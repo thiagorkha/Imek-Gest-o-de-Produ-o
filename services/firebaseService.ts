@@ -1,5 +1,4 @@
-
-// Fix: Use the named import initializeApp from firebase/app for modern Firebase SDK compatibility
+// Standardizing imports for Firebase modular SDK compatibility
 import { initializeApp } from 'firebase/app';
 import { 
   getFirestore, 
@@ -24,18 +23,23 @@ const firebaseConfig = {
   measurementId: "G-3ZH7X7L00R"
 };
 
-// Fix: Call initializeApp directly as it is a named export in the modular Firebase SDK
+// Initialize Firebase with the modular SDK entry point
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 
 export const firebaseService = {
   async registerUser(username: string, password: string): Promise<User> {
     try {
-      const userRef = doc(db, 'users', username.toLowerCase());
+      const lowerUsername = username.toLowerCase();
+      const userRef = doc(db, 'users', lowerUsername);
+      
+      // Define se o usuário é admin baseado no nome (admin ou master)
+      const isAdmin = ['admin', 'master'].includes(lowerUsername);
+      
       const newUser: User = {
-        id: username.toLowerCase(),
+        id: lowerUsername,
         username,
-        role: username.toLowerCase() === 'admin' ? UserRole.ADMIN : UserRole.OPERATOR
+        role: isAdmin ? UserRole.ADMIN : UserRole.OPERATOR
       };
       await setDoc(userRef, { ...newUser, password });
       return newUser;
