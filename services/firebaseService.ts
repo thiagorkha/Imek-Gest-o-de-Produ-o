@@ -1,3 +1,5 @@
+
+// Fix: Use the correct import for initializeApp from firebase/app
 import { initializeApp } from 'firebase/app';
 import { 
   getFirestore, 
@@ -12,7 +14,6 @@ import {
 } from 'firebase/firestore';
 import { ProductionRecord, User, UserRole } from '../types';
 
-// Configuração fixa do Firebase. Chave do projeto Firebase ≠ Chave do Gemini.
 const firebaseConfig = {
   apiKey: "AIzaSyA0SQwMvqXRimhqLviCL0LfoD062gr2Jk0",
   authDomain: "imek-producao.firebaseapp.com",
@@ -23,45 +24,64 @@ const firebaseConfig = {
   measurementId: "G-3ZH7X7L00R"
 };
 
-// Initialize Firebase
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 
 export const firebaseService = {
   async registerUser(username: string, password: string): Promise<User> {
-    const userRef = doc(db, 'users', username.toLowerCase());
-    const newUser: User = {
-      id: username.toLowerCase(),
-      username,
-      role: username.toLowerCase() === 'admin' ? UserRole.ADMIN : UserRole.OPERATOR
-    };
-    await setDoc(userRef, { ...newUser, password });
-    return newUser;
+    try {
+      const userRef = doc(db, 'users', username.toLowerCase());
+      const newUser: User = {
+        id: username.toLowerCase(),
+        username,
+        role: username.toLowerCase() === 'admin' ? UserRole.ADMIN : UserRole.OPERATOR
+      };
+      await setDoc(userRef, { ...newUser, password });
+      return newUser;
+    } catch (error) {
+      console.error("Erro detalhado no registro:", error);
+      throw error;
+    }
   },
 
   async loginUser(username: string, password: string): Promise<User | null> {
-    const snapshot = await getDocs(query(collection(db, 'users'), where('username', '==', username)));
-    
-    if (snapshot.empty) return null;
-    
-    const userData = snapshot.docs[0].data();
-    if (userData.password !== password) return null;
+    try {
+      const snapshot = await getDocs(query(collection(db, 'users'), where('username', '==', username)));
+      
+      if (snapshot.empty) return null;
+      
+      const userData = snapshot.docs[0].data();
+      if (userData.password !== password) return null;
 
-    return {
-      id: snapshot.docs[0].id,
-      username: userData.username,
-      role: userData.role
-    };
+      return {
+        id: snapshot.docs[0].id,
+        username: userData.username,
+        role: userData.role
+      };
+    } catch (error) {
+      console.error("Erro detalhado no login:", error);
+      throw error;
+    }
   },
 
   async saveRecord(record: ProductionRecord): Promise<string> {
-    const docRef = await addDoc(collection(db, 'production_records'), record);
-    return docRef.id;
+    try {
+      const docRef = await addDoc(collection(db, 'production_records'), record);
+      return docRef.id;
+    } catch (error) {
+      console.error("Erro ao salvar registro:", error);
+      throw error;
+    }
   },
 
   async getAllRecords(): Promise<ProductionRecord[]> {
-    const q = query(collection(db, 'production_records'), orderBy('timestamp', 'desc'));
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ProductionRecord));
+    try {
+      const q = query(collection(db, 'production_records'), orderBy('timestamp', 'desc'));
+      const snapshot = await getDocs(q);
+      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ProductionRecord));
+    } catch (error) {
+      console.error("Erro ao buscar registros:", error);
+      throw error;
+    }
   }
 };

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { AppStep, User, UserRole, ProductionRecord } from './types';
 import { firebaseService } from './services/firebaseService';
@@ -18,7 +19,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { format } from 'date-fns';
-// Fix: Import ptBR from the specific locale subpath to resolve the 'no exported member' error
+// Fix: Import locale directly from its specific path to ensure compatibility and correct symbol lookup
 import { ptBR } from 'date-fns/locale/pt-BR';
 
 const App: React.FC = () => {
@@ -29,7 +30,6 @@ const App: React.FC = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Production State
   const [prodData, setProdData] = useState<Partial<ProductionRecord>>({
     maquina: '',
     op: '',
@@ -44,7 +44,6 @@ const App: React.FC = () => {
   const [timer, setTimer] = useState(0);
   const [records, setRecords] = useState<ProductionRecord[]>([]);
 
-  // Timer logic
   useEffect(() => {
     let interval: any;
     if (startTime) {
@@ -73,7 +72,7 @@ const App: React.FC = () => {
         setError('Usuário ou senha inválidos.');
       }
     } catch (err) {
-      setError('Erro ao conectar com o servidor.');
+      setError('Erro ao conectar com o servidor. Verifique o console.');
     } finally {
       setLoading(false);
     }
@@ -88,8 +87,8 @@ const App: React.FC = () => {
       setUser(newUser);
       setProdData(prev => ({ ...prev, operador: newUser.username }));
       setStep(AppStep.IDENTIFICATION);
-    } catch (err) {
-      setError('Erro ao registrar usuário.');
+    } catch (err: any) {
+      setError(`Erro ao registrar: ${err.message || 'Verifique o console'}`);
     } finally {
       setLoading(false);
     }
