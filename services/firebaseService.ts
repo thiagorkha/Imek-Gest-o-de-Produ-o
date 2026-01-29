@@ -1,6 +1,6 @@
 
-// Fix: Use the correct import for initializeApp from firebase/app
-import * as firebaseApp from 'firebase/app';
+// Fix: Use the named import initializeApp from firebase/app for modern Firebase SDK compatibility
+import { initializeApp } from 'firebase/app';
 import { 
   getFirestore, 
   collection, 
@@ -24,8 +24,8 @@ const firebaseConfig = {
   measurementId: "G-3ZH7X7L00R"
 };
 
-// Use the explicit initializeApp from the star import to avoid named export resolution issues
-const app = firebaseApp.initializeApp(firebaseConfig);
+// Fix: Call initializeApp directly as it is a named export in the modular Firebase SDK
+const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 
 export const firebaseService = {
