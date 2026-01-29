@@ -1,5 +1,3 @@
-
-// Fix: Import initializeApp from 'firebase/app' ensuring no trailing spaces or module resolution issues
 import { initializeApp } from 'firebase/app';
 import { 
   getFirestore, 
@@ -14,10 +12,9 @@ import {
 } from 'firebase/firestore';
 import { ProductionRecord, User, UserRole } from '../types';
 
-// O Vite injeta variáveis de ambiente através de process.env se configurado no Render.
-// O API_KEY deve ser obtido exclusivamente de process.env.API_KEY conforme as diretrizes.
+// Configuração fixa do Firebase. Chave do projeto Firebase ≠ Chave do Gemini.
 const firebaseConfig = {
-  apiKey: process.env.API_KEY,
+  apiKey: "AIzaSyA0SQwMvqXRimhqLviCL0LfoD062gr2Jk0",
   authDomain: "imek-producao.firebaseapp.com",
   projectId: "imek-producao",
   storageBucket: "imek-producao.firebasestorage.app",

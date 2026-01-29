@@ -15,16 +15,14 @@ O aplicativo utiliza o **Cloud Firestore** para armazenar usuários e registros 
 
 ---
 
-## 2. Deploy no Render (IMPORTANTE)
+## 2. Deploy no Render (Static Site)
 
-Para evitar a tela em branco e erros de dependências:
+O projeto está configurado para ser transpilado via Vite.
 
 ### Configuração no Painel do Render:
 1.  Crie um novo **Static Site**.
 2.  **Build Command**: `npm install --legacy-peer-deps && npm run build`
 3.  **Publish Directory**: `dist`
-4.  **Environment Variables**:
-    *   Adicione `API_KEY`: sua chave do Google Gemini (necessária para a IA).
 
 ---
 

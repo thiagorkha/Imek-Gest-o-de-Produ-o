@@ -1,21 +1,20 @@
 
 # Histórico de Desenvolvimento - IMEK Gestão de Produção
 
+## Versão 1.3.0 - Correção de Build e Remoção de IA
+- **Data**: 29 de Janeiro de 2026
+- **Mudanças principais**:
+    - Inclusão do `@vitejs/plugin-react` para resolver erro de build no Render.
+    - Remoção completa do Google Gemini AI (código, dependências e chaves).
+    - Substituição da tela de análise pela mensagem "Em construção", conforme solicitado.
+    - Criação do arquivo `vite.config.ts`.
+
 ## Versão 1.2.1 - Correção de Conflitos de Dependências (Render)
 - **Data**: 29 de Janeiro de 2026
 - **Mudanças principais**:
-    - Padronização do projeto para **React 18.3.1** para resolver erro `ERESOLVE` no npm.
-    - Atualização do `lucide-react` para a versão `0.474.0`.
-    - Atualização do comando de build no `SETUP.md` para incluir `--legacy-peer-deps`.
-    - Sincronização do `importmap` no `index.html`.
+    - Padronização do projeto para **React 18.3.1**.
 
-## Versão 1.2.0 - Correção de Deploy e Transpilação
-- **Data**: 24 de Maio de 2024
-- **Mudanças principais**:
-    - Implementação de configuração de build com **Vite**.
-    - Inclusão de shim para `process.env`.
-
-## Versão 1.1.0 - Análise com IA
+## Versão 1.1.0 - Análise com IA (Descontinuada)
 - **Data**: 23 de Maio de 2024
 - **Mudanças principais**:
-    - Implementação da Análise de Produção com Google Gemini AI.
+    - Implementação (agora removida) da Análise de Produção com IA.

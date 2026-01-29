@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { AppStep, User, UserRole, ProductionRecord } from './types';
 import { firebaseService } from './services/firebaseService';
@@ -15,14 +14,12 @@ import {
   PieChart,
   ArrowLeft,
   Download,
-  Sparkles,
-  RefreshCw
+  AlertCircle
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { format } from 'date-fns';
-// Fix: Import ptBR locale correctly from date-fns/locale
-import { ptBR } from 'date-fns/locale';
-import { GoogleGenAI } from "@google/genai";
+// Fix: Import ptBR from the specific locale subpath to resolve the 'no exported member' error
+import { ptBR } from 'date-fns/locale/pt-BR';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -46,10 +43,6 @@ const App: React.FC = () => {
   const [startTime, setStartTime] = useState<number | null>(null);
   const [timer, setTimer] = useState(0);
   const [records, setRecords] = useState<ProductionRecord[]>([]);
-
-  // AI Analysis State
-  const [analysis, setAnalysis] = useState<string>('');
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   // Timer logic
   useEffect(() => {
@@ -190,52 +183,10 @@ const App: React.FC = () => {
     }
   };
 
-  // Implementing Gemini AI Analysis following the latest SDK standards
-  const generateAIAnalysis = async () => {
-    setIsAnalyzing(true);
-    setError('');
-    try {
-      const data = await firebaseService.getAllRecords();
-      setRecords(data);
-
-      if (data.length === 0) {
-        setAnalysis('Ainda não há registros suficientes para realizar uma análise de desempenho.');
-        setIsAnalyzing(false);
-        return;
-      }
-
-      // Fix: Always create a new instance before making the call as per guidelines
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      
-      const recentRecordsSummary = data.slice(0, 20).map(r => 
-        `- OP: ${r.op}, Máquina: ${r.maquina}, Quantidade: ${r.quantity}, Setup: ${formatDuration(r.setupDurationSeconds)}, Produção: ${formatDuration(r.durationSeconds)}`
-      ).join('\n');
-
-      // Use gemini-3-pro-preview for complex reasoning tasks
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-pro-preview',
-        contents: `Analise o histórico de produção recente da IMEK SLEEVE fornecido abaixo. Identifique os 3 principais pontos de ineficiência (gargalos) e forneça recomendações acionáveis para otimizar o tempo de setup e a cadência produtiva. Responda em português (pt-BR) usando Markdown:\n\n${recentRecordsSummary}`,
-        config: {
-          systemInstruction: "Você é um consultor especialista em excelência operacional industrial e Lean Manufacturing.",
-        }
-      });
-
-      // Fix: Directly access the .text property (not a method)
-      setAnalysis(response.text || 'Ocorreu um erro ao gerar o conteúdo da análise.');
-    } catch (err) {
-      console.error(err);
-      setError('Erro ao conectar com a Inteligência Artificial para gerar insights.');
-    } finally {
-      setIsAnalyzing(false);
-    }
-  };
-
-  // UI RENDERING LOGIC
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-md bg-white rounded-3xl shadow-xl overflow-hidden border border-gray-100 glass-panel">
         
-        {/* Header Logo */}
         <div className="bg-white p-6 flex flex-col items-center border-b border-gray-100">
            <div className="bg-blue-600 p-3 rounded-2xl mb-4 shadow-lg shadow-blue-200">
              <ClipboardCheck className="text-white w-8 h-8" />
@@ -251,7 +202,6 @@ const App: React.FC = () => {
             </div>
           )}
 
-          {/* STEP 0: LOGIN */}
           {step === AppStep.LOGIN && (
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
@@ -293,7 +243,6 @@ const App: React.FC = () => {
             </form>
           )}
 
-          {/* STEP 0.1: REGISTER */}
           {step === AppStep.REGISTER && (
             <form onSubmit={handleRegister} className="space-y-4">
               <h2 className="text-lg font-bold text-center mb-4">Cadastro de Operador</h2>
@@ -334,7 +283,6 @@ const App: React.FC = () => {
             </form>
           )}
 
-          {/* STEP: ADMIN MENU */}
           {step === AppStep.ADMIN_MENU && (
             <div className="space-y-4">
                <h2 className="text-xl font-bold text-gray-800 text-center mb-4">Menu Administrador</h2>
@@ -373,7 +321,6 @@ const App: React.FC = () => {
             </div>
           )}
 
-          {/* STEP: GESTÃO DE PRODUÇÃO (ADMIN) */}
           {step === AppStep.GESTÃO_PRODUCAO && (
             <div className="space-y-4">
                <div className="flex items-center gap-2 mb-4">
@@ -397,7 +344,7 @@ const App: React.FC = () => {
                </button>
 
                <button 
-                onClick={() => { setStep(AppStep.ANALYSIS); if (!analysis) generateAIAnalysis(); }}
+                onClick={() => setStep(AppStep.ANALYSIS)}
                 className="w-full flex items-center gap-4 p-5 bg-white rounded-2xl border border-gray-200 hover:bg-gray-50 transition-all text-left"
                >
                  <div className="bg-orange-500 p-3 rounded-xl text-white shadow-md">
@@ -405,54 +352,31 @@ const App: React.FC = () => {
                  </div>
                  <div>
                    <span className="block font-bold text-gray-900">Análise dos Apontamentos</span>
-                   <span className="text-xs text-gray-500">Dashboards (IA)</span>
+                   <span className="text-xs text-gray-500">Relatórios detalhados</span>
                  </div>
                </button>
             </div>
           )}
 
-          {/* STEP: ANALYSIS (IA DASHBOARD) */}
           {step === AppStep.ANALYSIS && (
             <div className="space-y-6">
-               <div className="flex items-center justify-between gap-2 mb-4">
-                 <div className="flex items-center gap-2">
-                   <button onClick={() => setStep(AppStep.GESTÃO_PRODUCAO)} className="p-2 bg-gray-100 rounded-full">
-                      <ArrowLeft size={16} />
-                   </button>
-                   <h2 className="text-xl font-bold text-gray-800">Inteligência Industrial</h2>
-                 </div>
-                 <button 
-                  onClick={generateAIAnalysis} 
-                  disabled={isAnalyzing}
-                  className="p-2 bg-blue-50 text-blue-600 rounded-full hover:bg-blue-100 transition-colors"
-                 >
-                   <RefreshCw size={18} className={isAnalyzing ? 'animate-spin' : ''} />
+               <div className="flex items-center gap-2 mb-4">
+                 <button onClick={() => setStep(AppStep.GESTÃO_PRODUCAO)} className="p-2 bg-gray-100 rounded-full">
+                    <ArrowLeft size={16} />
                  </button>
+                 <h2 className="text-xl font-bold text-gray-800">Análise de Dados</h2>
                </div>
 
-               {isAnalyzing ? (
-                 <div className="text-center py-10 space-y-4">
-                    <div className="bg-blue-100 p-6 rounded-full inline-block text-blue-600 animate-pulse">
-                      <Sparkles size={48} />
-                    </div>
-                    <p className="text-gray-600 font-bold">Gerando insights com Gemini...</p>
-                    <p className="text-xs text-gray-400">Processando métricas de eficiência e tempos de setup.</p>
-                 </div>
-               ) : (
-                 <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm min-h-[300px]">
-                    <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap leading-relaxed">
-                      {analysis || "Nenhuma análise disponível. Clique no ícone de atualizar para processar os dados."}
-                    </div>
-                 </div>
-               )}
-               
-               <p className="text-[10px] text-gray-400 text-center italic mt-4">
-                 Análise automatizada baseada em IA Experimental. Valide as recomendações operacionalmente.
-               </p>
+               <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
+                  <div className="bg-amber-100 p-6 rounded-full text-amber-600">
+                    <AlertCircle size={48} />
+                  </div>
+                  <h3 className="text-2xl font-bold text-gray-800">Página em Construção</h3>
+                  <p className="text-gray-500 max-w-[250px]">Estamos trabalhando para trazer as melhores visualizações de dados para você.</p>
+               </div>
             </div>
           )}
 
-          {/* STEP: SAVED RECORDS (TABLE) */}
           {step === AppStep.SAVED_RECORDS && (
             <div className="w-full max-w-4xl -mx-4">
                <div className="flex justify-between items-center mb-6 px-4">
@@ -498,9 +422,6 @@ const App: React.FC = () => {
             </div>
           )}
 
-          {/* PRODUCTION WORKFLOW */}
-          
-          {/* STEP 1: IDENTIFICATION */}
           {step === AppStep.IDENTIFICATION && (
             <div className="space-y-6">
               <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
@@ -531,7 +452,6 @@ const App: React.FC = () => {
             </div>
           )}
 
-          {/* STEP 2: DETAILS */}
           {step === AppStep.DETAILS && (
             <div className="space-y-6">
               <h2 className="text-lg font-bold text-gray-800">Passo 2: Detalhes da Produção</h2>
@@ -573,7 +493,6 @@ const App: React.FC = () => {
             </div>
           )}
 
-          {/* STEP 3: TIMER */}
           {step === AppStep.TIMER && (
             <div className="space-y-6 text-center">
               <h2 className="text-xl font-bold text-gray-800">
@@ -605,7 +524,6 @@ const App: React.FC = () => {
             </div>
           )}
 
-          {/* STEP 4: SUMMARY */}
           {step === AppStep.SUMMARY && (
             <div className="space-y-6">
               <h2 className="text-lg font-bold text-gray-800">Passo 4: Dados Finais</h2>
@@ -643,14 +561,13 @@ const App: React.FC = () => {
             </div>
           )}
 
-          {/* STEP 5: COMPLETED */}
           {step === AppStep.COMPLETED && (
             <div className="text-center py-6 space-y-6">
               <div className="bg-green-100 p-6 rounded-full inline-block text-green-600 mb-4 animate-bounce">
                 <CheckCircle2 size={60} />
               </div>
               <h2 className="text-3xl font-extrabold text-gray-800">Concluído!</h2>
-              <p className="text-gray-600 px-4">O registro foi salvo com sucesso no banco de dados. Seu foco fez a diferença.</p>
+              <p className="text-gray-600 px-4">O registro foi salvo com sucesso no banco de dados.</p>
               <button 
                 onClick={() => {
                   setProdData({maquina: prodData.maquina, operador: user?.username});
@@ -665,7 +582,6 @@ const App: React.FC = () => {
         </div>
       </div>
       
-      {/* Install Button (PWA) */}
       <button 
         id="install-btn"
         className="mt-6 text-sm text-gray-500 font-bold border-b border-gray-400 hover:text-blue-600 hover:border-blue-600 transition-all flex items-center gap-2"
