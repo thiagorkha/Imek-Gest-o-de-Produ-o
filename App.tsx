@@ -112,15 +112,23 @@ const App: React.FC = () => {
       return;
     }
     setError('');
+    const now = Date.now();
     setIsSetupMode(mode === 'setup');
-    setStartTime(Date.now());
+    setStartTime(now);
     setTimer(0);
+    
+    // Se for produção direta, já salvamos o início da produção agora
+    if (mode === 'direct') {
+      setProdData(prev => ({ ...prev, startTime: now }));
+    }
+    
     setStep(AppStep.TIMER);
   };
 
   const finishSetupAndStartProd = () => {
-    setProdData(prev => ({ ...prev, setupDurationSeconds: timer, startTime: Date.now() }));
-    setStartTime(Date.now());
+    const now = Date.now();
+    setProdData(prev => ({ ...prev, setupDurationSeconds: timer, startTime: now }));
+    setStartTime(now);
     setTimer(0);
     setIsSetupMode(false);
   };
@@ -135,12 +143,15 @@ const App: React.FC = () => {
   const saveRecord = async () => {
     setLoading(true);
     try {
+      // Garantir que temos um startTime válido, caso algo tenha falhado no fluxo
+      const finalStartTime = prodData.startTime || Date.now() - (prodData.durationSeconds || 0) * 1000;
+      
       const finalRecord: ProductionRecord = {
         operador: user?.username || '',
         maquina: prodData.maquina || '',
         op: prodData.op || '',
         cp: prodData.cp || '',
-        startTime: prodData.startTime || 0,
+        startTime: finalStartTime,
         endTime: prodData.endTime || Date.now(),
         durationSeconds: prodData.durationSeconds || 0,
         setupDurationSeconds: prodData.setupDurationSeconds || 0,
@@ -178,7 +189,7 @@ const App: React.FC = () => {
     }
   };
 
-  // Fix: Implementation of AI-powered analysis using Gemini 3 Pro
+  // Implementation of AI-powered analysis using Gemini 3 Pro
   const generateAnalysis = async () => {
     setIsAnalyzing(true);
     setError('');
@@ -257,6 +268,8 @@ const App: React.FC = () => {
   const exportToExcel = () => {
     const ws = XLSX.utils.json_to_sheet(filteredAndSortedRecords.map(r => ({
       'Data': format(r.timestamp, 'dd/MM/yyyy HH:mm', { locale: ptBR }),
+      'Início': format(r.startTime, 'HH:mm:ss', { locale: ptBR }),
+      'Fim': format(r.endTime, 'HH:mm:ss', { locale: ptBR }),
       'Operador': r.operador,
       'Máquina': r.maquina,
       'OP': r.op,

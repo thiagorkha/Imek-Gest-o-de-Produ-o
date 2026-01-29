@@ -23,7 +23,8 @@ const firebaseConfig = {
   measurementId: "G-3ZH7X7L00R"
 };
 
-// Initialize Firebase with the modular SDK entry point
+// Initialize Firebase with the modular SDK entry point.
+// Fix: Ensuring initializeApp is correctly used from 'firebase/app'
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 

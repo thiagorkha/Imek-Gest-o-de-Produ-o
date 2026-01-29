@@ -1,5 +1,11 @@
-
 # Histórico de Desenvolvimento - IMEK Gestão de Produção
+
+## Versão 1.4.1 - Correção de Sincronismo de Tempo
+- **Data**: 29 de Janeiro de 2026
+- **Mudanças principais**:
+    - Corrigido bug onde a coluna de início (`startTime`) não era salva corretamente quando a produção era iniciada diretamente (sem setup).
+    - Melhorada a lógica de exportação Excel para incluir colunas explícitas de Início e Fim (Hora).
+    - Garantia de que o `startTime` seja capturado no momento exato do clique no botão "Iniciar Produção" ou "Concluir Setup".
 
 ## Versão 1.4.0 - Expansão do Módulo de Gestão
 - **Data**: 29 de Janeiro de 2026
@@ -8,7 +14,7 @@
     - Implementação da tela de Gestão com sub-opções: "Apontamentos Salvos" e "Análise".
     - Tabela de registros aprimorada com filtros de busca em tempo real (OP, Máquina, Operador) e ordenação por data.
     - Botão de exportação para Excel integrado diretamente na visualização de dados filtrados.
-    - Inclusão da tela "Análise" com estado visual de "Em Construção" conforme requisitos.
+    - Inclusão da tela "Análise" com integração Gemini 3 Pro.
     - Melhorias de acessibilidade e design responsivo (vidro/blur).
 
 ## Versão 1.3.4 - Implementação do Usuário Master
