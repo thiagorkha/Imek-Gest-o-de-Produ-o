@@ -1,4 +1,4 @@
-// Fixing the potential import issue where initializeApp was reported as missing from firebase/app
+
 import { initializeApp } from 'firebase/app';
 import { 
   getFirestore, 
@@ -13,10 +13,9 @@ import {
 } from 'firebase/firestore';
 import { ProductionRecord, User, UserRole } from '../types';
 
-// NOTE: In a real scenario, these would be in environment variables.
-// Using mock configuration structure as requested.
+// O Vite injeta variáveis de ambiente através de process.env se configurado no Render
 const firebaseConfig = {
-  apiKey: "AIzaSyA0SQwMvqXRimhqLviCL0LfoD062gr2Jk0",
+  apiKey: process.env.API_KEY || "AIzaSyA0SQwMvqXRimhqLviCL0LfoD062gr2Jk0",
   authDomain: "imek-producao.firebaseapp.com",
   projectId: "imek-producao",
   storageBucket: "imek-producao.firebasestorage.app",
@@ -25,7 +24,7 @@ const firebaseConfig = {
   measurementId: "G-3ZH7X7L00R"
 };
 
-// Initialize the Firebase application
+// Initialize Firebase
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 
@@ -42,7 +41,6 @@ export const firebaseService = {
   },
 
   async loginUser(username: string, password: string): Promise<User | null> {
-    const userRef = doc(db, 'users', username.toLowerCase());
     const snapshot = await getDocs(query(collection(db, 'users'), where('username', '==', username)));
     
     if (snapshot.empty) return null;

@@ -22,7 +22,8 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+// Fix: Import ptBR locale directly from the locale path to resolve module member errors
+import ptBR from 'date-fns/locale/pt-BR';
 import { GoogleGenAI } from "@google/genai";
 
 // Components
@@ -168,8 +169,8 @@ const App: React.FC = () => {
       'Máquina': r.maquina,
       'OP': r.op,
       'CP': r.cp,
-      'Início': format(r.startTime, 'dd/MM/yyyy HH:mm'),
-      'Fim': format(r.endTime, 'dd/MM/yyyy HH:mm'),
+      'Início': format(r.startTime, 'dd/MM/yyyy HH:mm', { locale: ptBR }),
+      'Fim': format(r.endTime, 'dd/MM/yyyy HH:mm', { locale: ptBR }),
       'Duração (Produção)': formatDuration(r.durationSeconds),
       'Duração (Setup)': formatDuration(r.setupDurationSeconds),
       'Quantidade': r.quantity,
@@ -485,7 +486,7 @@ const App: React.FC = () => {
                         <tr><td colSpan={5} className="text-center py-10 text-gray-400">Nenhum registro encontrado.</td></tr>
                      ) : records.map(r => (
                        <tr key={r.id} className="hover:bg-gray-50">
-                         <td className="px-4 py-3">{format(r.timestamp, 'dd/MM/yy')}</td>
+                         <td className="px-4 py-3">{format(r.timestamp, 'dd/MM/yy', { locale: ptBR })}</td>
                          <td className="px-4 py-3 font-medium text-blue-600">{r.op}</td>
                          <td className="px-4 py-3">{r.operador}</td>
                          <td className="px-4 py-3 font-bold">{r.quantity}</td>

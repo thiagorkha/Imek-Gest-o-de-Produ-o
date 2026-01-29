@@ -18,6 +18,10 @@
             backdrop-filter: blur(10px);
         }
     </style>
+    <!-- Shim para evitar erro de 'process is not defined' no navegador -->
+    <script>
+      window.process = { env: { API_KEY: "" } };
+    </script>
 <script type="importmap">
 {
   "imports": {
@@ -36,5 +40,7 @@
 </head>
 <body class="bg-gray-50 text-gray-900">
     <div id="root"></div>
+    <!-- Carregamento do módulo principal da aplicação -->
+    <script type="module" src="/index.tsx"></script>
 </body>
 </html>

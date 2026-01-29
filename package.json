@@ -1,7 +1,8 @@
+
 {
-  "name": "imek---gestão-de-produção",
+  "name": "imek-producao",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,18 +10,18 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "xlsx": "^0.18.5",
-    "react": "^19.2.4",
+    "@google/genai": "^1.38.0",
     "date-fns": "^4.1.0",
-    "react-dom": "^19.2.4",
-    "firebase": "^12.8.0",
-    "lucide-react": "^0.563.0",
-    "@google/genai": "^1.38.0"
+    "firebase": "^11.1.0",
+    "lucide-react": "^0.363.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "@types/node": "^22.14.0",
-    "@vitejs/plugin-react": "^5.0.0",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.3.3",
+    "vite": "^5.2.2"
   }
 }
