@@ -1,4 +1,4 @@
-// Standardizing imports for Firebase modular SDK compatibility
+
 import { initializeApp } from 'firebase/app';
 import { 
   getFirestore, 
@@ -24,7 +24,6 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase with the modular SDK entry point.
-// Fix: Ensuring initializeApp is correctly used from 'firebase/app'
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 

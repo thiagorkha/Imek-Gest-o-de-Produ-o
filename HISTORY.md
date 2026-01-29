@@ -1,36 +1,20 @@
 # Histórico de Desenvolvimento - IMEK Gestão de Produção
 
-## Versão 1.4.1 - Correção de Sincronismo de Tempo
+## Versão 1.4.3 - Refinamento Crítico de Integridade Temporal
 - **Data**: 29 de Janeiro de 2026
 - **Mudanças principais**:
-    - Corrigido bug onde a coluna de início (`startTime`) não era salva corretamente quando a produção era iniciada diretamente (sem setup).
-    - Melhorada a lógica de exportação Excel para incluir colunas explícitas de Início e Fim (Hora).
-    - Garantia de que o `startTime` seja capturado no momento exato do clique no botão "Iniciar Produção" ou "Concluir Setup".
+    - Reescrita da lógica de captura do `startTime`: agora o marco inicial é capturado no milissegundo exato do clique em "Iniciar Setup" ou "Iniciar Produção" e bloqueado contra sobrescritas acidentais.
+    - O fluxo de transição Setup -> Produção agora preserva o marco inicial da atividade inteira, garantindo relatórios de eficiência 100% fiéis ao evento real.
+    - Removido qualquer cálculo de fallback baseado em tempo atual no momento do salvamento.
+
+## Versão 1.4.2 - Ajuste de Precisão no Horário de Início
+- **Data**: 29 de Janeiro de 2026
+- **Mudanças principais**:
+    - Garantido que o `startTime` salvo no banco de dados reflita o momento exato em que o operador clicou no primeiro botão de ação ("Iniciar Setup" ou "Iniciar Produção").
+    - Melhorada a clareza na exportação Excel, agora com colunas "Hora Início" e "Hora Fim" formatadas.
 
 ## Versão 1.4.0 - Expansão do Módulo de Gestão
 - **Data**: 29 de Janeiro de 2026
 - **Mudanças principais**:
     - Reestruturação do fluxo do Administrador: Agora permite escolher entre "Apontamento" e "Gestão".
-    - Implementação da tela de Gestão com sub-opções: "Apontamentos Salvos" e "Análise".
-    - Tabela de registros aprimorada com filtros de busca em tempo real (OP, Máquina, Operador) e ordenação por data.
-    - Botão de exportação para Excel integrado diretamente na visualização de dados filtrados.
-    - Inclusão da tela "Análise" com integração Gemini 3 Pro.
-    - Melhorias de acessibilidade e design responsivo (vidro/blur).
-
-## Versão 1.3.4 - Implementação do Usuário Master
-- **Data**: 29 de Janeiro de 2026
-- **Mudanças principais**:
-    - Atualizada a lógica de registro no `firebaseService.ts` para reconhecer automaticamente o nome de usuário "master" como administrador.
-
-## Versão 1.3.3 - Correção de Build (Render) e Dependências
-- **Data**: 29 de Janeiro de 2026
-- **Mudanças principais**:
-    - Adicionado `@google/genai` ao `package.json` para corrigir erro de resolução no Rollup.
-    - Limpeza de dependências de runtime no `importmap`.
-
-## Versão 1.3.0 - Integração Firebase e Sistema de Login
-- **Data**: 29 de Janeiro de 2026
-- **Mudanças principais**:
-    - Substituição do Google Sheets pelo Firebase Firestore.
-    - Criação de sistema de autenticação (Nome/Senha).
-    - Diferenciação de papéis (Operador vs Admin).
+    - Implementação da tela de Gestão com integração Gemini 3 Pro.

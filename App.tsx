@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { AppStep, User, UserRole, ProductionRecord } from './types';
 import { firebaseService } from './services/firebaseService';
@@ -22,7 +23,7 @@ import {
 import * as XLSX from 'xlsx';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale/pt-BR';
-// Fix: Import GoogleGenAI for advanced production analysis
+// Fix: Use correct import for GoogleGenAI as per strict guidelines
 import { GoogleGenAI } from "@google/genai";
 
 const App: React.FC = () => {
@@ -33,12 +34,10 @@ const App: React.FC = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // States for Table Management
   const [records, setRecords] = useState<ProductionRecord[]>([]);
   const [filterText, setFilterText] = useState('');
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
 
-  // Gemini AI Analysis States
   const [analysis, setAnalysis] = useState<string>('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
@@ -49,7 +48,8 @@ const App: React.FC = () => {
     durationSeconds: 0,
     setupDurationSeconds: 0,
     quantity: 0,
-    observation: ''
+    observation: '',
+    startTime: 0 // Inicializado explicitamente
   });
   
   const [isSetupMode, setIsSetupMode] = useState(true);
@@ -113,45 +113,60 @@ const App: React.FC = () => {
     }
     setError('');
     const now = Date.now();
+    
     setIsSetupMode(mode === 'setup');
     setStartTime(now);
     setTimer(0);
     
-    // Se for produção direta, já salvamos o início da produção agora
-    if (mode === 'direct') {
-      setProdData(prev => ({ ...prev, startTime: now }));
-    }
+    // Captura o momento exato do clique inicial e salva permanentemente no estado do registro
+    setProdData(prev => ({ 
+      ...prev, 
+      startTime: now,
+      setupDurationSeconds: 0,
+      durationSeconds: 0
+    }));
     
     setStep(AppStep.TIMER);
   };
 
   const finishSetupAndStartProd = () => {
     const now = Date.now();
-    setProdData(prev => ({ ...prev, setupDurationSeconds: timer, startTime: now }));
+    // Salva a duração do setup mas mantém o startTime original do clique lá no Passo 2
+    setProdData(prev => ({ 
+      ...prev, 
+      setupDurationSeconds: timer
+    }));
+    // Reinicia o cronômetro visual para a fase de produção real
     setStartTime(now);
     setTimer(0);
     setIsSetupMode(false);
   };
 
   const finishProduction = () => {
-    const totalDuration = timer;
-    setProdData(prev => ({ ...prev, durationSeconds: totalDuration, endTime: Date.now() }));
+    const now = Date.now();
+    setProdData(prev => ({ 
+      ...prev, 
+      durationSeconds: timer, 
+      endTime: now 
+    }));
     setStartTime(null);
     setStep(AppStep.SUMMARY);
   };
 
   const saveRecord = async () => {
+    if (!prodData.startTime) {
+      setError('Erro de integridade de dados: horário de início não detectado.');
+      return;
+    }
+
     setLoading(true);
     try {
-      // Garantir que temos um startTime válido, caso algo tenha falhado no fluxo
-      const finalStartTime = prodData.startTime || Date.now() - (prodData.durationSeconds || 0) * 1000;
-      
       const finalRecord: ProductionRecord = {
         operador: user?.username || '',
         maquina: prodData.maquina || '',
         op: prodData.op || '',
         cp: prodData.cp || '',
-        startTime: finalStartTime,
+        startTime: prodData.startTime, // Usa o valor capturado exatamente no clique
         endTime: prodData.endTime || Date.now(),
         durationSeconds: prodData.durationSeconds || 0,
         setupDurationSeconds: prodData.setupDurationSeconds || 0,
@@ -162,7 +177,7 @@ const App: React.FC = () => {
       await firebaseService.saveRecord(finalRecord);
       setStep(AppStep.COMPLETED);
     } catch (err) {
-      setError('Erro ao salvar registro.');
+      setError('Erro ao salvar registro no banco de dados.');
     } finally {
       setLoading(false);
     }
@@ -189,7 +204,6 @@ const App: React.FC = () => {
     }
   };
 
-  // Implementation of AI-powered analysis using Gemini 3 Pro
   const generateAnalysis = async () => {
     setIsAnalyzing(true);
     setError('');
@@ -207,10 +221,8 @@ const App: React.FC = () => {
         return;
       }
 
-      // Initialize the AI client using the mandatory environment variable
+      // Fix: Follow guidelines by creating the instance right before the call and using correct model
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      
-      // Using gemini-3-pro-preview for complex reasoning and data analysis
       const response = await ai.models.generateContent({
         model: 'gemini-3-pro-preview',
         contents: `Você é um consultor sênior de produtividade industrial especializado em otimização de linhas de produção.
@@ -229,7 +241,7 @@ const App: React.FC = () => {
         }
       });
 
-      // Directly access .text property from response
+      // Fix: Extract text directly from response property as per guidelines
       if (response.text) {
         setAnalysis(response.text);
       } else {
@@ -267,9 +279,9 @@ const App: React.FC = () => {
 
   const exportToExcel = () => {
     const ws = XLSX.utils.json_to_sheet(filteredAndSortedRecords.map(r => ({
-      'Data': format(r.timestamp, 'dd/MM/yyyy HH:mm', { locale: ptBR }),
-      'Início': format(r.startTime, 'HH:mm:ss', { locale: ptBR }),
-      'Fim': format(r.endTime, 'HH:mm:ss', { locale: ptBR }),
+      'Data': format(r.timestamp, 'dd/MM/yyyy', { locale: ptBR }),
+      'Hora Início': format(r.startTime, 'HH:mm:ss', { locale: ptBR }),
+      'Hora Fim': format(r.endTime, 'HH:mm:ss', { locale: ptBR }),
       'Operador': r.operador,
       'Máquina': r.maquina,
       'OP': r.op,
@@ -731,7 +743,7 @@ const App: React.FC = () => {
               <p className="text-gray-600 px-4">Os dados foram transmitidos e armazenados com segurança.</p>
               <button 
                 onClick={() => {
-                  setProdData({maquina: prodData.maquina, operador: user?.username});
+                  setProdData({maquina: prodData.maquina, operador: user?.username, startTime: 0});
                   setStep(user?.role === UserRole.ADMIN ? AppStep.ADMIN_MENU : AppStep.IDENTIFICATION);
                 }}
                 className="w-full bg-blue-600 text-white font-bold py-4 rounded-2xl shadow-xl shadow-blue-100 hover:bg-blue-700 transition-all"
