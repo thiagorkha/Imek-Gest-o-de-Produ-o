@@ -17,11 +17,11 @@ O aplicativo utiliza o **Cloud Firestore** para armazenar usuários e registros 
 
 ## 2. Deploy no Render (IMPORTANTE)
 
-Para evitar a tela em branco, o Render precisa processar os arquivos `.tsx`.
+Para evitar a tela em branco e erros de dependências:
 
 ### Configuração no Painel do Render:
 1.  Crie um novo **Static Site**.
-2.  **Build Command**: `npm install && npm run build`
+2.  **Build Command**: `npm install --legacy-peer-deps && npm run build`
 3.  **Publish Directory**: `dist`
 4.  **Environment Variables**:
     *   Adicione `API_KEY`: sua chave do Google Gemini (necessária para a IA).

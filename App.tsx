@@ -1,12 +1,10 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppStep, User, UserRole, ProductionRecord } from './types';
 import { firebaseService } from './services/firebaseService';
 import { 
   ClipboardCheck, 
-  History, 
   LogOut, 
-  Settings, 
   Play, 
   Square, 
   CheckCircle2, 
@@ -22,11 +20,10 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { format } from 'date-fns';
-// Fix: Import ptBR locale directly from the locale path to resolve module member errors
-import ptBR from 'date-fns/locale/pt-BR';
+// Fix: Import ptBR locale correctly from date-fns/locale
+import { ptBR } from 'date-fns/locale';
 import { GoogleGenAI } from "@google/genai";
 
-// Components
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [step, setStep] = useState<AppStep>(AppStep.LOGIN);
@@ -193,7 +190,7 @@ const App: React.FC = () => {
     }
   };
 
-  // Implementing Gemini AI Analysis to replace the placeholder
+  // Implementing Gemini AI Analysis following the latest SDK standards
   const generateAIAnalysis = async () => {
     setIsAnalyzing(true);
     setError('');
@@ -207,21 +204,23 @@ const App: React.FC = () => {
         return;
       }
 
-      // Initialize Gemini with the required configuration
+      // Fix: Always create a new instance before making the call as per guidelines
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
       const recentRecordsSummary = data.slice(0, 20).map(r => 
         `- OP: ${r.op}, Máquina: ${r.maquina}, Quantidade: ${r.quantity}, Setup: ${formatDuration(r.setupDurationSeconds)}, Produção: ${formatDuration(r.durationSeconds)}`
       ).join('\n');
 
+      // Use gemini-3-pro-preview for complex reasoning tasks
       const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-3-pro-preview',
         contents: `Analise o histórico de produção recente da IMEK SLEEVE fornecido abaixo. Identifique os 3 principais pontos de ineficiência (gargalos) e forneça recomendações acionáveis para otimizar o tempo de setup e a cadência produtiva. Responda em português (pt-BR) usando Markdown:\n\n${recentRecordsSummary}`,
         config: {
           systemInstruction: "Você é um consultor especialista em excelência operacional industrial e Lean Manufacturing.",
         }
       });
 
+      // Fix: Directly access the .text property (not a method)
       setAnalysis(response.text || 'Ocorreu um erro ao gerar o conteúdo da análise.');
     } catch (err) {
       console.error(err);
