@@ -1,0 +1,8 @@
+{
+  "name": "IMEK - Gestão de Produção",
+  "description": "Sistema avançado para apontamento e gestão de produção industrial com integração Firebase e PWA.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
