@@ -1,4 +1,3 @@
-
 import { initializeApp } from 'firebase/app';
 import { 
   getFirestore, 
@@ -13,6 +12,7 @@ import {
 } from 'firebase/firestore';
 import { ProductionRecord, User, UserRole } from '../types';
 
+// Standard Firebase configuration for the project
 const firebaseConfig = {
   apiKey: "AIzaSyA0SQwMvqXRimhqLviCL0LfoD062gr2Jk0",
   authDomain: "imek-producao.firebaseapp.com",

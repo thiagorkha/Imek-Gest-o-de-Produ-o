@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { AppStep, User, UserRole, ProductionRecord } from './types';
 import { firebaseService } from './services/firebaseService';
@@ -23,8 +22,7 @@ import {
 import * as XLSX from 'xlsx';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale/pt-BR';
-// Fix: Use correct import for GoogleGenAI as per strict guidelines
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -49,7 +47,7 @@ const App: React.FC = () => {
     setupDurationSeconds: 0,
     quantity: 0,
     observation: '',
-    startTime: 0 // Inicializado explicitamente
+    startTime: undefined // Alterado para undefined para evitar o valor '0' inicial
   });
   
   const [isSetupMode, setIsSetupMode] = useState(true);
@@ -118,7 +116,7 @@ const App: React.FC = () => {
     setStartTime(now);
     setTimer(0);
     
-    // Captura o momento exato do clique inicial e salva permanentemente no estado do registro
+    // Captura o momento exato do clique inicial de forma imutável
     setProdData(prev => ({ 
       ...prev, 
       startTime: now,
@@ -131,12 +129,12 @@ const App: React.FC = () => {
 
   const finishSetupAndStartProd = () => {
     const now = Date.now();
-    // Salva a duração do setup mas mantém o startTime original do clique lá no Passo 2
+    // Salva a duração do setup preservando o startTime original via atualização funcional
     setProdData(prev => ({ 
       ...prev, 
       setupDurationSeconds: timer
     }));
-    // Reinicia o cronômetro visual para a fase de produção real
+    // Reinicia o cronômetro visual
     setStartTime(now);
     setTimer(0);
     setIsSetupMode(false);
@@ -154,8 +152,9 @@ const App: React.FC = () => {
   };
 
   const saveRecord = async () => {
-    if (!prodData.startTime) {
-      setError('Erro de integridade de dados: horário de início não detectado.');
+    // Validação de segurança para garantir que o startTime não seja zero ou indefinido
+    if (!prodData.startTime || prodData.startTime === 0) {
+      setError('Falha de sincronização: horário de início não detectado corretamente. Tente reiniciar o processo.');
       return;
     }
 
@@ -166,7 +165,7 @@ const App: React.FC = () => {
         maquina: prodData.maquina || '',
         op: prodData.op || '',
         cp: prodData.cp || '',
-        startTime: prodData.startTime, // Usa o valor capturado exatamente no clique
+        startTime: prodData.startTime, 
         endTime: prodData.endTime || Date.now(),
         durationSeconds: prodData.durationSeconds || 0,
         setupDurationSeconds: prodData.setupDurationSeconds || 0,
@@ -221,9 +220,10 @@ const App: React.FC = () => {
         return;
       }
 
-      // Fix: Follow guidelines by creating the instance right before the call and using correct model
+      // Initialize Gemini AI client for processing the prompt.
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const response = await ai.models.generateContent({
+      // Call the model for complex text reasoning.
+      const response: GenerateContentResponse = await ai.models.generateContent({
         model: 'gemini-3-pro-preview',
         contents: `Você é um consultor sênior de produtividade industrial especializado em otimização de linhas de produção.
         Analise os seguintes registros de produção da empresa IMEK SLEEVE e gere um relatório técnico em Markdown.
@@ -241,7 +241,7 @@ const App: React.FC = () => {
         }
       });
 
-      // Fix: Extract text directly from response property as per guidelines
+      // Extract generated text from the response using .text property.
       if (response.text) {
         setAnalysis(response.text);
       } else {
@@ -605,7 +605,7 @@ const App: React.FC = () => {
                 <label className="block text-sm font-semibold text-gray-600 mb-1">Máquina / Linha</label>
                 <select 
                   value={prodData.maquina} 
-                  onChange={e => setProdData({...prodData, maquina: e.target.value})}
+                  onChange={e => setProdData(prev => ({ ...prev, maquina: e.target.value }))}
                   className="w-full p-3 rounded-xl border border-gray-200 bg-gray-50"
                 >
                   <option value="">Selecione...</option>
@@ -636,14 +636,14 @@ const App: React.FC = () => {
                 <input 
                   type="text" 
                   value={prodData.op} 
-                  onChange={e => setProdData({...prodData, op: e.target.value})}
+                  onChange={e => setProdData(prev => ({ ...prev, op: e.target.value }))}
                   className="w-full p-3 rounded-xl border border-gray-200 bg-gray-50"
                   placeholder="Ordem de Produção (OP)"
                 />
                 <input 
                   type="text" 
                   value={prodData.cp} 
-                  onChange={e => setProdData({...prodData, cp: e.target.value})}
+                  onChange={e => setProdData(prev => ({ ...prev, cp: e.target.value }))}
                   className="w-full p-3 rounded-xl border border-gray-200 bg-gray-50"
                   placeholder="Código do Produto (CP)"
                 />
@@ -710,7 +710,7 @@ const App: React.FC = () => {
                 <input 
                   type="number" 
                   value={prodData.quantity} 
-                  onChange={e => setProdData({...prodData, quantity: parseInt(e.target.value) || 0})}
+                  onChange={e => setProdData(prev => ({ ...prev, quantity: parseInt(e.target.value) || 0 }))}
                   className="w-full p-3 rounded-xl border border-gray-200 bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none"
                   placeholder="0"
                 />
@@ -719,7 +719,7 @@ const App: React.FC = () => {
                 <label className="block text-sm font-semibold text-gray-600 mb-1">Notas / Ocorrências</label>
                 <textarea 
                   value={prodData.observation} 
-                  onChange={e => setProdData({...prodData, observation: e.target.value})}
+                  onChange={e => setProdData(prev => ({ ...prev, observation: e.target.value }))}
                   className="w-full p-3 rounded-xl border border-gray-200 bg-gray-50 h-24 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
                   placeholder="Descreva observações relevantes..."
                 />
@@ -743,7 +743,7 @@ const App: React.FC = () => {
               <p className="text-gray-600 px-4">Os dados foram transmitidos e armazenados com segurança.</p>
               <button 
                 onClick={() => {
-                  setProdData({maquina: prodData.maquina, operador: user?.username, startTime: 0});
+                  setProdData({ maquina: prodData.maquina, operador: user?.username, startTime: undefined });
                   setStep(user?.role === UserRole.ADMIN ? AppStep.ADMIN_MENU : AppStep.IDENTIFICATION);
                 }}
                 className="w-full bg-blue-600 text-white font-bold py-4 rounded-2xl shadow-xl shadow-blue-100 hover:bg-blue-700 transition-all"
