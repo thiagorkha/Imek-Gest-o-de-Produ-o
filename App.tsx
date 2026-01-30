@@ -13,7 +13,7 @@ import {
   LogIn,
   LayoutDashboard,
   FileSpreadsheet,
-  PieChart,
+  PieChart, 
   ArrowLeft,
   Download,
   Search, 
@@ -126,7 +126,7 @@ const App: React.FC = () => {
         html5QrCode.stop().catch(err => console.error("Error stopping scanner", err));
       };
       
-      const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+      const config = { fps: 15, qrbox: { width: 280, height: 200 } };
       
       html5QrCode.start(
         { facingMode: "environment" }, 
@@ -135,7 +135,7 @@ const App: React.FC = () => {
         undefined
       ).catch(err => {
         console.error("Error starting scanner", err);
-        setError("Não foi possível acessar a câmera.");
+        setError("Não foi possível acessar a câmera. Verifique as permissões.");
         setIsScanning(false);
       });
 
@@ -148,17 +148,20 @@ const App: React.FC = () => {
 
     return (
       <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center animate-in fade-in duration-300">
-        <div className="w-full max-w-sm px-4 flex flex-col items-center">
-          <div className="w-full aspect-square bg-gray-900 rounded-3xl border-4 border-blue-500 overflow-hidden relative" id="scanner-reader">
-            {/* Visual scan guide */}
-            <div className="absolute inset-0 pointer-events-none border-2 border-white/20 m-12 rounded-xl"></div>
+        <div className="w-full max-w-md px-6 flex flex-col items-center">
+          <div className="w-full aspect-video bg-black rounded-3xl border-4 border-blue-500 overflow-hidden relative shadow-2xl" id="scanner-reader">
           </div>
-          <p className="mt-6 text-white text-lg font-bold text-center">Posicione o código de barras no centro da tela</p>
+          <div className="mt-8 text-center space-y-2">
+            <p className="text-white text-xl font-extrabold flex items-center justify-center gap-2">
+              <ScanLine className="text-blue-400" /> Escaneando OP
+            </p>
+            <p className="text-gray-400 text-sm font-medium">Alinhe o código de barras dentro da área central</p>
+          </div>
           <button 
             onClick={() => setIsScanning(false)}
-            className="mt-12 bg-white/10 hover:bg-white/20 text-white px-8 py-4 rounded-2xl flex items-center gap-2 font-bold backdrop-blur-md transition-all"
+            className="mt-12 bg-white/10 hover:bg-white/20 text-white px-10 py-4 rounded-2xl flex items-center gap-2 font-bold backdrop-blur-md transition-all border border-white/10 active:scale-95"
           >
-            <X size={20} /> Cancelar Leitura
+            <X size={20} /> Fechar Câmera
           </button>
         </div>
       </div>
@@ -486,7 +489,6 @@ const App: React.FC = () => {
     const todayPercent = goalToday > 0 ? (todayHours / goalToday) * 100 : 0;
     const yesterdayPercent = goalYesterday > 0 ? (yesterdayHours / goalYesterday) * 100 : 0;
 
-    // FIX: Ensure returning numbers for consistency to avoid string|number TS errors later
     return {
       todayPercent: Math.round(todayPercent),
       yesterdayPercent: Math.round(yesterdayPercent),
@@ -499,7 +501,6 @@ const App: React.FC = () => {
 
   const dailyChartData = [
     { name: 'Meta', horas: dailyStats.goalToday, fill: '#e2e8f0' },
-    // FIX: dailyStats.todayHours is now guaranteed to be a number
     { name: 'Realizado', horas: dailyStats.todayHours, fill: '#3b82f6' }
   ];
 
@@ -747,7 +748,6 @@ const App: React.FC = () => {
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Horas Disponíveis/Dia</label>
-                      {/* FIX: Use Number() instead of parseFloat for consistent behavior and ensuring it handles empty strings gracefully as 0 */}
                       <input type="number" value={availableHoursPerDay} onChange={e => setAvailableHoursPerDay(Number(e.target.value))} className="w-full p-2.5 rounded-xl border border-gray-300 bg-white text-sm focus:ring-2 focus:ring-blue-500" />
                     </div>
                     <div>
@@ -924,7 +924,7 @@ const App: React.FC = () => {
                     />
                     <button 
                       onClick={() => setIsScanning(true)}
-                      className="p-3 bg-blue-100 text-blue-600 rounded-xl hover:bg-blue-200 transition-colors shadow-sm"
+                      className="p-3 bg-blue-100 text-blue-600 rounded-xl hover:bg-blue-200 transition-colors shadow-sm active:scale-95 flex items-center justify-center"
                       title="Escanear Código de Barras"
                     >
                       <ScanLine size={24} />
@@ -1042,7 +1042,6 @@ const App: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-widest">Quantidade Produzida</label>
-                {/* FIX: Ensure value is not undefined for controlled component and use Number() for conversion */}
                 <input type="number" value={prodData.quantity ?? 0} onChange={e => setProdData(prev => ({ ...prev, quantity: Number(e.target.value) || 0 }))} className="w-full p-4 rounded-xl border border-gray-200 bg-gray-50 text-xl font-black text-blue-600 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="0" />
               </div>
               <div>
