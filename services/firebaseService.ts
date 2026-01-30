@@ -1,3 +1,4 @@
+
 // Fix: Use standard modular import for initializeApp from firebase/app
 import { initializeApp } from 'firebase/app';
 import { 
@@ -9,7 +10,9 @@ import {
   where, 
   orderBy, 
   setDoc, 
-  doc 
+  doc,
+  getDoc,
+  deleteDoc
 } from 'firebase/firestore';
 import { ProductionRecord, User, UserRole } from '../types';
 
@@ -28,13 +31,22 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 
+export interface ActiveSession {
+  maquina: string;
+  op: string;
+  cp: string;
+  startTime: number;
+  isSetupMode: boolean;
+  setupDurationSeconds: number;
+  timestamp: number;
+}
+
 export const firebaseService = {
   async registerUser(username: string, password: string): Promise<User> {
     try {
       const lowerUsername = username.toLowerCase();
       const userRef = doc(db, 'users', lowerUsername);
       
-      // Define se o usuário é admin baseado no nome (admin ou master)
       const isAdmin = ['admin', 'master'].includes(lowerUsername);
       
       const newUser: User = {
@@ -89,5 +101,25 @@ export const firebaseService = {
       console.error("Erro ao buscar registros:", error);
       throw error;
     }
+  },
+
+  // Gerenciamento de Sessão Ativa (Cronômetro)
+  async saveActiveSession(userId: string, session: ActiveSession): Promise<void> {
+    const sessionRef = doc(db, 'active_sessions', userId);
+    await setDoc(sessionRef, session);
+  },
+
+  async getActiveSession(userId: string): Promise<ActiveSession | null> {
+    const sessionRef = doc(db, 'active_sessions', userId);
+    const snapshot = await getDoc(sessionRef);
+    if (snapshot.exists()) {
+      return snapshot.data() as ActiveSession;
+    }
+    return null;
+  },
+
+  async deleteActiveSession(userId: string): Promise<void> {
+    const sessionRef = doc(db, 'active_sessions', userId);
+    await deleteDoc(sessionRef);
   }
 };

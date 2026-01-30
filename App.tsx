@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { AppStep, User, UserRole, ProductionRecord } from './types';
-import { firebaseService } from './services/firebaseService';
+import { firebaseService, ActiveSession } from './services/firebaseService';
 import { 
   ClipboardCheck, 
   LogOut, 
@@ -21,10 +21,10 @@ import {
   Sparkles,
   TrendingUp,
   Clock,
-  User as UserIcon
+  User as UserIcon,
+  CloudCheck
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-// Fix: Import date-fns functions directly from their subpaths to ensure they are found by the TypeScript compiler and bundler.
 import format from 'date-fns/format';
 import startOfDay from 'date-fns/startOfDay';
 import endOfDay from 'date-fns/endOfDay';
@@ -84,10 +84,47 @@ const App: React.FC = () => {
   const [timerStartTime, setTimerStartTime] = useState<number | null>(null);
   const [timer, setTimer] = useState(0);
 
+  // Recuperar sessão ativa ao carregar usuário
+  useEffect(() => {
+    const checkForActiveSession = async () => {
+      if (user && user.role === UserRole.OPERATOR) {
+        setLoading(true);
+        try {
+          const session = await firebaseService.getActiveSession(user.id);
+          if (session) {
+            setProdData(prev => ({
+              ...prev,
+              maquina: session.maquina,
+              op: session.op,
+              cp: session.cp,
+              setupDurationSeconds: session.setupDurationSeconds,
+              operador: user.username
+            }));
+            setProductionStartTime(session.startTime);
+            setIsSetupMode(session.isSetupMode);
+            setTimerStartTime(session.timestamp); // Tempo relativo ao último evento salvo
+            
+            // Calculamos o tempo transcorrido desde o início da fase atual
+            const elapsed = Math.floor((Date.now() - session.timestamp) / 1000);
+            setTimer(elapsed);
+            
+            setStep(AppStep.TIMER);
+          }
+        } catch (err) {
+          console.error("Erro ao recuperar sessão:", err);
+        } finally {
+          setLoading(false);
+        }
+      }
+    };
+    checkForActiveSession();
+  }, [user]);
+
   useEffect(() => {
     let interval: any;
     if (timerStartTime) {
       interval = setInterval(() => {
+        // Usamos o Date.now() menos o timerStartTime do estado para manter precisão
         setTimer(Math.floor((Date.now() - timerStartTime) / 1000));
       }, 1000);
     }
@@ -134,7 +171,7 @@ const App: React.FC = () => {
     }
   };
 
-  const startProduction = (mode: 'setup' | 'direct') => {
+  const startProduction = async (mode: 'setup' | 'direct') => {
     if (!prodData.op || !prodData.cp) {
       setError('Preencha OP e CP antes de iniciar.');
       return;
@@ -142,22 +179,51 @@ const App: React.FC = () => {
     setError('');
     const now = Date.now();
     setProductionStartTime(now);
-    sessionStorage.setItem('imek_start_time', now.toString());
     setIsSetupMode(mode === 'setup');
     setTimerStartTime(now);
     setTimer(0);
+
+    // Persistir sessão no Firebase
+    if (user) {
+      const session: ActiveSession = {
+        maquina: prodData.maquina || '',
+        op: prodData.op || '',
+        cp: prodData.cp || '',
+        startTime: now,
+        isSetupMode: mode === 'setup',
+        setupDurationSeconds: 0,
+        timestamp: now
+      };
+      await firebaseService.saveActiveSession(user.id, session);
+    }
+
     setStep(AppStep.TIMER);
   };
 
-  const finishSetupAndStartProd = () => {
+  const finishSetupAndStartProd = async () => {
     const now = Date.now();
-    setProdData(prev => ({ ...prev, setupDurationSeconds: timer }));
+    const setupDuration = timer;
+    setProdData(prev => ({ ...prev, setupDurationSeconds: setupDuration }));
     setTimerStartTime(now);
     setTimer(0);
     setIsSetupMode(false);
+
+    // Atualizar persistência no Firebase
+    if (user) {
+      const session: ActiveSession = {
+        maquina: prodData.maquina || '',
+        op: prodData.op || '',
+        cp: prodData.cp || '',
+        startTime: productionStartTime || now,
+        isSetupMode: false,
+        setupDurationSeconds: setupDuration,
+        timestamp: now
+      };
+      await firebaseService.saveActiveSession(user.id, session);
+    }
   };
 
-  const finishProduction = () => {
+  const finishProduction = async () => {
     const now = Date.now();
     setProductionEndTime(now);
     setProdData(prev => ({ ...prev, durationSeconds: timer }));
@@ -167,11 +233,7 @@ const App: React.FC = () => {
 
   const saveRecord = async () => {
     let finalStartTime = productionStartTime;
-    if (!finalStartTime || finalStartTime === 0) {
-      const stored = sessionStorage.getItem('imek_start_time');
-      if (stored) finalStartTime = parseInt(stored);
-    }
-
+    
     const MIN_VALID_TIMESTAMP = 1704067200000;
     if (!finalStartTime || finalStartTime < MIN_VALID_TIMESTAMP) {
       setError('Erro de Sincronização. Reinicie o apontamento.');
@@ -194,7 +256,12 @@ const App: React.FC = () => {
         timestamp: Date.now()
       };
       await firebaseService.saveRecord(finalRecord);
-      sessionStorage.removeItem('imek_start_time');
+      
+      // Limpar sessão ativa após sucesso
+      if (user) {
+        await firebaseService.deleteActiveSession(user.id);
+      }
+      
       setStep(AppStep.COMPLETED);
     } catch (err) {
       setError('Erro ao salvar registro.');
@@ -587,6 +654,11 @@ const App: React.FC = () => {
 
           {step === AppStep.TIMER && (
             <div className="space-y-6 text-center">
+              <div className="flex justify-center mb-2">
+                <div className="flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-600 rounded-full text-[10px] font-bold border border-blue-100">
+                  <CloudCheck size={12} /> SESSÃO SINCRONIZADA
+                </div>
+              </div>
               <h2 className="text-xl font-bold text-gray-800">{isSetupMode ? 'Setup em Andamento' : 'Produção em Andamento'}</h2>
               <div className="bg-gray-900 text-green-400 p-8 rounded-3xl font-mono text-5xl border-4 border-gray-800 shadow-2xl tracking-tighter">{formatDuration(timer)}</div>
               <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 text-left text-xs text-blue-800 font-medium">
@@ -597,6 +669,11 @@ const App: React.FC = () => {
               ) : (
                 <button onClick={finishProduction} className="w-full bg-red-600 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg hover:bg-red-700"><Square size={20} /> Finalizar</button>
               )}
+              <div className="pt-2">
+                 <button onClick={() => {setUser(null); setStep(AppStep.LOGIN)}} className="text-gray-400 text-xs font-bold hover:text-red-500 flex items-center justify-center gap-1 mx-auto">
+                   <LogOut size={12} /> Pausar e Sair do App
+                 </button>
+              </div>
             </div>
           )}
 
@@ -620,7 +697,7 @@ const App: React.FC = () => {
               <div className="bg-green-100 p-8 rounded-full inline-block text-green-600 shadow-inner"><CheckCircle2 size={70} /></div>
               <h2 className="text-3xl font-black text-gray-800">Sucesso!</h2>
               <p className="text-gray-500 font-medium">Os dados foram sincronizados com o banco de dados da IMEK.</p>
-              <button onClick={() => { setProdData({ maquina: prodData.maquina, operador: user?.username }); setProductionStartTime(null); setProductionEndTime(null); sessionStorage.removeItem('imek_start_time'); setStep(user?.role === UserRole.ADMIN ? AppStep.ADMIN_MENU : AppStep.IDENTIFICATION); }} className="w-full bg-blue-600 text-white font-bold py-4 rounded-2xl shadow-xl hover:bg-blue-700 transition-all">Novo Apontamento</button>
+              <button onClick={() => { setProdData({ maquina: prodData.maquina, operador: user?.username }); setProductionStartTime(null); setProductionEndTime(null); setStep(user?.role === UserRole.ADMIN ? AppStep.ADMIN_MENU : AppStep.IDENTIFICATION); }} className="w-full bg-blue-600 text-white font-bold py-4 rounded-2xl shadow-xl hover:bg-blue-700 transition-all">Novo Apontamento</button>
             </div>
           )}
         </div>
