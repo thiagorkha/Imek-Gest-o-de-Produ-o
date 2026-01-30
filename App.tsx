@@ -15,7 +15,7 @@ import {
   PieChart,
   ArrowLeft,
   Download,
-  Search,
+  Search, 
   ArrowUpDown,
   Calendar,
   Sparkles,
@@ -121,6 +121,7 @@ const App: React.FC = () => {
               op: session.op,
               cp: session.cp,
               setupDurationSeconds: session.setupDurationSeconds,
+              totalPauseSeconds: session.isSetupMode ? 0 : (session.accumulatedPauseSeconds / 1000), // Aproximação se necessário
               operador: user.username
             }));
             setProductionStartTime(session.startTime);
@@ -153,7 +154,7 @@ const App: React.FC = () => {
     checkForActiveSession();
   }, [user]);
 
-  // Cronômetro principal (decrementa visualmente o tempo de pausa)
+  // Cronômetro principal (calcula tempo líquido: Real - Pausas)
   useEffect(() => {
     let interval: any;
     if (timerStartTime && !isPaused) {
@@ -242,6 +243,12 @@ const App: React.FC = () => {
     setAccumulatedPauseSeconds(0);
     setPausesList([]);
 
+    setProdData(prev => ({
+      ...prev,
+      totalPauseSeconds: 0,
+      pauses: []
+    }));
+
     await persistSession({
       startTime: now,
       isSetupMode: mode === 'setup',
@@ -269,18 +276,18 @@ const App: React.FC = () => {
     }
     setError('');
     const now = Date.now();
-    const pauseDuration = pauseStartTime ? Math.floor((now - pauseStartTime) / 1000) : 0;
+    const pauseDurationMs = pauseStartTime ? (now - pauseStartTime) : 0;
     
     const newPause: ProductionPause = {
       reason: pauseReason.trim(),
-      durationSeconds: pauseDuration,
+      durationSeconds: Math.floor(pauseDurationMs / 1000),
       timestamp: now
     };
 
-    const newAccumulated = accumulatedPauseSeconds + (pauseDuration * 1000);
+    const newAccumulatedMs = accumulatedPauseSeconds + pauseDurationMs;
     const newList = [...pausesList, newPause];
 
-    setAccumulatedPauseSeconds(newAccumulated);
+    setAccumulatedPauseSeconds(newAccumulatedMs);
     setPausesList(newList);
     setIsPaused(false);
     setPauseStartTime(null);
@@ -289,7 +296,7 @@ const App: React.FC = () => {
     await persistSession({ 
       isPaused: false, 
       pauseStartTime: null, 
-      accumulatedPauseSeconds: newAccumulated,
+      accumulatedPauseSeconds: newAccumulatedMs,
       pauses: newList
     });
   };
@@ -297,16 +304,31 @@ const App: React.FC = () => {
   const finishSetupAndStartProd = async () => {
     const now = Date.now();
     const setupDuration = timer;
-    setProdData(prev => ({ ...prev, setupDurationSeconds: setupDuration }));
+    
+    // Guardamos o tempo acumulado de pausas do setup no prodData para persistir na fase de produção
+    setProdData(prev => ({ 
+      ...prev, 
+      setupDurationSeconds: setupDuration,
+      pauses: pausesList,
+      totalPauseSeconds: Math.floor(accumulatedPauseSeconds / 1000)
+    }));
+
+    // Ao iniciar a produção, resetamos o cronômetro visual
+    // O accumulatedPauseSeconds continua crescendo a partir daqui ou resetamos se o timerStartTime também resetar
+    // Para facilitar, resetamos o timerStartTime para o agora e o acumulador para 0 para a fase de produção começar do zero
+    // Mas mantemos os dados no prodData
     setTimerStartTime(now);
     setTimer(0);
     setIsSetupMode(false);
+    
+    // Nota: O accumulatedPauseSeconds e o pausesList nas sessões ativas (Firebase) representam o total da sessão
+    // Se resetarmos aqui, precisamos somar no final. Optamos por manter o acumulador global da sessão.
     
     await persistSession({
       isSetupMode: false,
       setupDurationSeconds: setupDuration,
       timestamp: now,
-      accumulatedPauseSeconds: accumulatedPauseSeconds,
+      accumulatedPauseSeconds: accumulatedPauseSeconds, // Mantém o que já tinha de pausa no setup
       pauses: pausesList
     });
   };
@@ -314,12 +336,16 @@ const App: React.FC = () => {
   const finishProduction = async () => {
     const now = Date.now();
     setProductionEndTime(now);
+    
+    // No final, a duração líquida de produção é o que está no timer
+    // O total de pausas é a soma total de ms convertida em segundos
     setProdData(prev => ({ 
       ...prev, 
       durationSeconds: timer,
       totalPauseSeconds: Math.floor(accumulatedPauseSeconds / 1000),
       pauses: pausesList
     }));
+    
     setTimerStartTime(null);
     setStep(AppStep.SUMMARY);
   };
@@ -335,6 +361,7 @@ const App: React.FC = () => {
 
     setLoading(true);
     try {
+      // Concatena todos os motivos de pausa encontrados durante a sessão (Setup + Produção)
       const concatenatedReasons = (prodData.pauses || [])
         .map(p => p.reason)
         .filter(r => r.length > 0)
@@ -356,6 +383,7 @@ const App: React.FC = () => {
         observation: prodData.observation || '',
         timestamp: Date.now()
       };
+      
       await firebaseService.saveRecord(finalRecord);
       
       if (user) {
@@ -443,7 +471,6 @@ const App: React.FC = () => {
     if (analysisOperator !== 'ALL') {
       r = r.filter(item => item.operador === analysisOperator);
     }
-    // Fix: Remove redundant 'as string' and use String() for explicit type conversion
     const start = analysisStartDate ? startOfDay(parseISO(String(analysisStartDate))).getTime() : 0;
     const end = analysisEndDate ? endOfDay(parseISO(String(analysisEndDate))).getTime() : Infinity;
     return r.filter(item => item.timestamp >= start && item.timestamp <= end);
@@ -455,13 +482,15 @@ const App: React.FC = () => {
     filteredAnalysisRecords.forEach(record => {
       const dateKey = format(new Date(record.timestamp), 'dd/MM');
       if (!dailyData[dateKey]) {
-        dailyData[dateKey] = { date: dateKey, quantity: 0, prodHours: 0, meta: availableHoursPerDay };
+        // Line 461 fix: Ensure availableHoursPerDay is treated correctly as a number and that the object creation is clean
+        dailyData[dateKey] = { date: dateKey, quantity: 0, prodHours: 0, meta: Number(availableHoursPerDay) };
       }
       dailyData[dateKey].quantity += record.quantity;
       dailyData[dateKey].prodHours += (record.durationSeconds + record.setupDurationSeconds) / 3600;
     });
 
-    return Object.values(dailyData).sort((a, b) => a.date.localeCompare(b.date));
+    // Fix: Explicitly ensuring a.date and b.date are strings for localeCompare, fixing potential "No overload matches this call" error
+    return Object.values(dailyData).sort((a, b) => String(a.date).localeCompare(String(b.date)));
   }, [filteredAnalysisRecords, availableHoursPerDay]);
 
   const filteredAndSortedRecords = useMemo(() => {
@@ -476,7 +505,6 @@ const App: React.FC = () => {
       );
     }
     if (tableStartDate || tableEndDate) {
-      // Fix: Use String() for explicit type conversion to satisfy parseISO expectations
       const start = tableStartDate ? startOfDay(parseISO(String(tableStartDate))).getTime() : 0;
       const end = tableEndDate ? endOfDay(parseISO(String(tableEndDate))).getTime() : Infinity;
       result = result.filter(r => r.timestamp >= start && r.timestamp <= end);
@@ -496,14 +524,14 @@ const App: React.FC = () => {
       'CP': r.cp,
       'Duração Produção': formatDuration(r.durationSeconds),
       'Duração Setup': formatDuration(r.setupDurationSeconds),
-      'Duração Pausas': formatDuration(r.totalPauseSeconds),
+      'Total Pausas': formatDuration(r.totalPauseSeconds),
       'Motivos das Pausas': r.pauseReasons || '',
       'Quantidade': r.quantity,
       'Observação': r.observation
     })));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Produção");
-    XLSX.writeFile(wb, `IMEK_Relatorio_${format(new Date(), 'yyyyMMdd_HHmm')}.xlsx`);
+    XLSX.writeFile(wb, `Relatorio_IMEK_${format(new Date(), 'yyyyMMdd_HHmm')}.xlsx`);
   };
 
   return (
@@ -846,7 +874,7 @@ const App: React.FC = () => {
               
               <button onClick={() => prodData.maquina ? setStep(AppStep.DETAILS) : setError('Selecione a máquina.')} className="w-full bg-blue-600 text-white font-bold py-3 rounded-xl shadow-lg hover:bg-blue-700 transition-all">Prosseguir</button>
               
-              <button onClick={() => {setUser(null); setStep(AppStep.LOGIN)}} className="w-full mt-4 flex items-center justify-center gap-2 text-gray-400 font-bold hover:text-red-500 transition-colors text-sm"><LogOut size={14} /> Sair do Systema</button>
+              <button onClick={() => {setUser(null); setStep(AppStep.LOGIN)}} className="w-full mt-4 flex items-center justify-center gap-2 text-gray-400 font-bold hover:text-red-500 transition-colors text-sm"><LogOut size={14} /> Sair do Sistema</button>
             </div>
           )}
 
@@ -882,43 +910,49 @@ const App: React.FC = () => {
               </div>
 
               {!isPaused ? (
-                <div className="space-y-4">
+                <div className="space-y-4 animate-in fade-in duration-300">
                    <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 text-left text-xs text-blue-800 font-medium">
                     Em execução na <span className="font-bold underline">{prodData.maquina}</span> para a <span className="font-bold underline">OP {prodData.op}</span>.
                   </div>
                   
-                  <button onClick={handlePause} className="w-full bg-orange-500 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg hover:bg-orange-600">
-                    <Pause size={20} /> Pausar
-                  </button>
+                  <div className="grid grid-cols-1 gap-3">
+                    <button onClick={handlePause} className="w-full bg-orange-500 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg hover:bg-orange-600 transition-all active:scale-95">
+                      <Pause size={20} /> Pausar
+                    </button>
 
-                  {isSetupMode ? (
-                    <button onClick={finishSetupAndStartProd} className="w-full bg-green-600 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg hover:bg-green-700"><Play size={20} /> Concluir Setup</button>
-                  ) : (
-                    <button onClick={finishProduction} className="w-full bg-red-600 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg hover:bg-red-700"><Square size={20} /> Finalizar</button>
-                  )}
+                    {isSetupMode ? (
+                      <button onClick={finishSetupAndStartProd} className="w-full bg-green-600 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg hover:bg-green-700 transition-all"><PlayCircle size={20} /> Concluir Setup</button>
+                    ) : (
+                      <button onClick={finishProduction} className="w-full bg-red-600 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg hover:bg-red-700 transition-all"><Square size={20} /> Finalizar Produção</button>
+                    )}
+                  </div>
                 </div>
               ) : (
-                <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
+                <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
                   <div className="bg-orange-50 p-5 rounded-3xl border border-orange-200 text-left space-y-3">
                     <div className="flex items-center gap-2 text-orange-800 font-bold text-sm">
-                      <AlertCircle size={18} /> Informe o Motivo da Pausa:
+                      <AlertCircle size={18} /> Motivo da Pausa:
                     </div>
                     <textarea 
                       value={pauseReason} 
                       onChange={e => setPauseReason(e.target.value)}
-                      className="w-full p-3 rounded-xl border border-orange-300 bg-white text-sm focus:ring-2 focus:ring-orange-500 outline-none h-24 placeholder-orange-200"
-                      placeholder="Ex: Manutenção, Falta de material, Almoço..."
+                      className="w-full p-3 rounded-xl border border-orange-300 bg-white text-sm focus:ring-2 focus:ring-orange-500 outline-none h-24 placeholder-orange-200 transition-all"
+                      placeholder="Descreva por que parou (ex: Manutenção, Almoço, Troca de ferramenta)..."
                     />
-                    <button onClick={handleResume} className="w-full bg-blue-600 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg hover:bg-blue-700 transition-all">
-                      <PlayCircle size={20} /> Retomar Produção
+                    <button 
+                      onClick={handleResume} 
+                      disabled={!pauseReason.trim()}
+                      className={`w-full font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg transition-all ${pauseReason.trim() ? 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
+                    >
+                      <PlayCircle size={20} /> Retomar Tempo
                     </button>
                   </div>
                 </div>
               )}
 
               <div className="pt-2">
-                 <button onClick={() => {setUser(null); setStep(AppStep.LOGIN)}} className="text-gray-400 text-xs font-bold hover:text-red-500 flex items-center justify-center gap-1 mx-auto">
-                   <LogOut size={12} /> Sair do App
+                 <button onClick={() => {setUser(null); setStep(AppStep.LOGIN)}} className="text-gray-400 text-xs font-bold hover:text-red-500 flex items-center justify-center gap-1 mx-auto transition-colors">
+                   <LogOut size={12} /> Sair da Sessão
                  </button>
               </div>
             </div>
@@ -926,25 +960,34 @@ const App: React.FC = () => {
 
           {step === AppStep.SUMMARY && (
             <div className="space-y-6">
-              <h2 className="text-lg font-bold text-gray-800">Finalizar Apontamento</h2>
+              <h2 className="text-lg font-bold text-gray-800">Resumo do Apontamento</h2>
               <div className="grid grid-cols-2 gap-3">
-                 <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
-                    <span className="text-[10px] text-gray-400 font-bold uppercase block">Tempo Líquido</span>
-                    <span className="text-lg font-black text-green-600">{formatDuration(prodData.durationSeconds || 0)}</span>
+                 <div className="bg-blue-50 p-3 rounded-xl border border-blue-100">
+                    <span className="text-[10px] text-blue-400 font-bold uppercase block">Tempo Líquido</span>
+                    <span className="text-lg font-black text-blue-700">{formatDuration(prodData.durationSeconds || 0)}</span>
                  </div>
-                 <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
-                    <span className="text-[10px] text-gray-400 font-bold uppercase block">Tempo de Pausas</span>
-                    <span className="text-lg font-black text-orange-600">{formatDuration(prodData.totalPauseSeconds || 0)}</span>
+                 <div className="bg-orange-50 p-3 rounded-xl border border-orange-100">
+                    <span className="text-[10px] text-orange-400 font-bold uppercase block">Total de Pausas</span>
+                    <span className="text-lg font-black text-orange-700">{formatDuration(prodData.totalPauseSeconds || 0)}</span>
                  </div>
               </div>
               
+              <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 space-y-2">
+                <span className="text-[10px] text-gray-400 font-bold uppercase block">Motivos das Pausas</span>
+                <p className="text-sm text-gray-600 font-medium italic">
+                  {prodData.pauses && prodData.pauses.length > 0 
+                    ? prodData.pauses.map(p => p.reason).join(' / ') 
+                    : 'Nenhuma pausa registrada.'}
+                </p>
+              </div>
+
               <div>
                 <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-widest">Quantidade Produzida</label>
                 <input type="number" value={prodData.quantity} onChange={e => setProdData(prev => ({ ...prev, quantity: parseInt(e.target.value) || 0 }))} className="w-full p-4 rounded-xl border border-gray-200 bg-gray-50 text-xl font-black text-blue-600 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="0" />
               </div>
               <div>
-                <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-widest">Observações Finais</label>
-                <textarea value={prodData.observation} onChange={e => setProdData(prev => ({ ...prev, observation: e.target.value }))} className="w-full p-3 rounded-xl border border-gray-200 bg-gray-50 h-24 text-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder="Alguma ocorrência extra durante o turno?" />
+                <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-widest">Observações Extras</label>
+                <textarea value={prodData.observation} onChange={e => setProdData(prev => ({ ...prev, observation: e.target.value }))} className="w-full p-3 rounded-xl border border-gray-200 bg-gray-50 h-24 text-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder="Ocorrências não previstas..." />
               </div>
               <button onClick={saveRecord} disabled={loading} className="w-full bg-blue-600 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-blue-700 active:scale-[0.98] transition-all">{loading ? 'Salvando...' : 'Gravar Apontamento'}</button>
             </div>
@@ -953,15 +996,16 @@ const App: React.FC = () => {
           {step === AppStep.COMPLETED && (
             <div className="text-center py-10 space-y-6 animate-in zoom-in duration-300">
               <div className="bg-green-100 p-8 rounded-full inline-block text-green-600 shadow-inner"><CheckCircle2 size={70} /></div>
-              <h2 className="text-3xl font-black text-gray-800">Sucesso!</h2>
-              <p className="text-gray-500 font-medium">Os dados foram sincronizados com o banco de dados da IMEK.</p>
+              <h2 className="text-3xl font-black text-gray-800">Finalizado!</h2>
+              <p className="text-gray-500 font-medium">Os dados foram enviados para o sistema central da IMEK.</p>
               <button onClick={() => { 
                 setProdData({ 
                   maquina: prodData.maquina, 
                   operador: user?.username,
                   pauses: [],
                   durationSeconds: 0,
-                  totalPauseSeconds: 0
+                  totalPauseSeconds: 0,
+                  setupDurationSeconds: 0
                 }); 
                 setProductionStartTime(null); 
                 setProductionEndTime(null); 
