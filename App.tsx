@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { AppStep, User, UserRole, ProductionRecord, ProductionPause } from './types';
 import { firebaseService, ActiveSession } from './services/firebaseService';
@@ -93,7 +92,10 @@ const App: React.FC = () => {
   const [isPaused, setIsPaused] = useState(false);
   const [pauseReason, setPauseReason] = useState('');
   const [pauseStartTime, setPauseStartTime] = useState<number | null>(null);
-  const [accumulatedPauseSeconds, setAccumulatedPauseSeconds] = useState(0);
+  
+  // LOGICA CRITICA: PhasePauseMs para o cronômetro visual, TotalPauseMs para o registro final
+  const [phasePauseMs, setPhasePauseMs] = useState(0); 
+  const [totalPauseMs, setTotalPauseMs] = useState(0);
   const [pausesList, setPausesList] = useState<ProductionPause[]>([]);
 
   // Helper para horas disponíveis por dia da semana
@@ -121,25 +123,25 @@ const App: React.FC = () => {
               op: session.op,
               cp: session.cp,
               setupDurationSeconds: session.setupDurationSeconds,
-              totalPauseSeconds: session.isSetupMode ? 0 : (session.accumulatedPauseSeconds / 1000), // Aproximação se necessário
               operador: user.username
             }));
             setProductionStartTime(session.startTime);
             setIsSetupMode(session.isSetupMode);
             setTimerStartTime(session.timestamp); 
             
-            // Recuperar estados de pausa
             setIsPaused(session.isPaused);
             setPauseStartTime(session.pauseStartTime);
-            setAccumulatedPauseSeconds(session.accumulatedPauseSeconds);
+            setPhasePauseMs(session.phasePauseMs);
+            setTotalPauseMs(session.totalPauseMs);
             setPausesList(session.pauses || []);
 
+            // Cálculo do timer líquido considerando apenas as pausas daquela fase específica
             if (session.isPaused && session.pauseStartTime) {
-              const netTimeAtPause = Math.floor((session.pauseStartTime - session.timestamp - session.accumulatedPauseSeconds) / 1000);
-              setTimer(netTimeAtPause);
+              const netTimeAtPause = Math.floor((session.pauseStartTime - session.timestamp - session.phasePauseMs) / 1000);
+              setTimer(Math.max(0, netTimeAtPause));
             } else {
-              const elapsedNet = Math.floor((Date.now() - session.timestamp - session.accumulatedPauseSeconds) / 1000);
-              setTimer(elapsedNet);
+              const elapsedNet = Math.floor((Date.now() - session.timestamp - session.phasePauseMs) / 1000);
+              setTimer(Math.max(0, elapsedNet));
             }
             
             setStep(AppStep.TIMER);
@@ -154,17 +156,17 @@ const App: React.FC = () => {
     checkForActiveSession();
   }, [user]);
 
-  // Cronômetro principal (calcula tempo líquido: Real - Pausas)
+  // Cronômetro principal (Tempo Líquido = Atual - Início da Fase - Pausas da Fase)
   useEffect(() => {
     let interval: any;
     if (timerStartTime && !isPaused) {
       interval = setInterval(() => {
-        const currentNet = Math.floor((Date.now() - timerStartTime - accumulatedPauseSeconds) / 1000);
-        setTimer(currentNet);
+        const currentNet = Math.floor((Date.now() - timerStartTime - phasePauseMs) / 1000);
+        setTimer(Math.max(0, currentNet));
       }, 1000);
     }
     return () => clearInterval(interval);
-  }, [timerStartTime, isPaused, accumulatedPauseSeconds]);
+  }, [timerStartTime, isPaused, phasePauseMs]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -221,7 +223,8 @@ const App: React.FC = () => {
       timestamp: timerStartTime,
       isPaused,
       pauseStartTime,
-      accumulatedPauseSeconds,
+      phasePauseMs,
+      totalPauseMs,
       pauses: pausesList,
       ...overrideParams
     };
@@ -240,21 +243,17 @@ const App: React.FC = () => {
     setTimerStartTime(now);
     setTimer(0);
     setIsPaused(false);
-    setAccumulatedPauseSeconds(0);
+    setPhasePauseMs(0);
+    setTotalPauseMs(0);
     setPausesList([]);
-
-    setProdData(prev => ({
-      ...prev,
-      totalPauseSeconds: 0,
-      pauses: []
-    }));
 
     await persistSession({
       startTime: now,
       isSetupMode: mode === 'setup',
       timestamp: now,
       isPaused: false,
-      accumulatedPauseSeconds: 0,
+      phasePauseMs: 0,
+      totalPauseMs: 0,
       pauses: []
     });
 
@@ -284,10 +283,12 @@ const App: React.FC = () => {
       timestamp: now
     };
 
-    const newAccumulatedMs = accumulatedPauseSeconds + pauseDurationMs;
+    const newPhasePauseMs = phasePauseMs + pauseDurationMs;
+    const newTotalPauseMs = totalPauseMs + pauseDurationMs;
     const newList = [...pausesList, newPause];
 
-    setAccumulatedPauseSeconds(newAccumulatedMs);
+    setPhasePauseMs(newPhasePauseMs);
+    setTotalPauseMs(newTotalPauseMs);
     setPausesList(newList);
     setIsPaused(false);
     setPauseStartTime(null);
@@ -296,40 +297,34 @@ const App: React.FC = () => {
     await persistSession({ 
       isPaused: false, 
       pauseStartTime: null, 
-      accumulatedPauseSeconds: newAccumulatedMs,
+      phasePauseMs: newPhasePauseMs,
+      totalPauseMs: newTotalPauseMs,
       pauses: newList
     });
   };
 
   const finishSetupAndStartProd = async () => {
     const now = Date.now();
-    const setupDuration = timer;
+    const setupDuration = timer; // Tempo líquido do setup
     
-    // Guardamos o tempo acumulado de pausas do setup no prodData para persistir na fase de produção
     setProdData(prev => ({ 
       ...prev, 
-      setupDurationSeconds: setupDuration,
-      pauses: pausesList,
-      totalPauseSeconds: Math.floor(accumulatedPauseSeconds / 1000)
+      setupDurationSeconds: setupDuration
     }));
 
-    // Ao iniciar a produção, resetamos o cronômetro visual
-    // O accumulatedPauseSeconds continua crescendo a partir daqui ou resetamos se o timerStartTime também resetar
-    // Para facilitar, resetamos o timerStartTime para o agora e o acumulador para 0 para a fase de produção começar do zero
-    // Mas mantemos os dados no prodData
+    // RESET PARA PRODUÇÃO: O cronômetro agora começa do zero real
+    // PhasePauseMs é zerado para não interferir na contagem da produção
     setTimerStartTime(now);
     setTimer(0);
+    setPhasePauseMs(0); 
     setIsSetupMode(false);
-    
-    // Nota: O accumulatedPauseSeconds e o pausesList nas sessões ativas (Firebase) representam o total da sessão
-    // Se resetarmos aqui, precisamos somar no final. Optamos por manter o acumulador global da sessão.
     
     await persistSession({
       isSetupMode: false,
       setupDurationSeconds: setupDuration,
       timestamp: now,
-      accumulatedPauseSeconds: accumulatedPauseSeconds, // Mantém o que já tinha de pausa no setup
-      pauses: pausesList
+      phasePauseMs: 0, // Resetamos o acumulador visual para a nova fase
+      totalPauseMs: totalPauseMs // Mantemos o acumulador global intocado
     });
   };
 
@@ -337,12 +332,10 @@ const App: React.FC = () => {
     const now = Date.now();
     setProductionEndTime(now);
     
-    // No final, a duração líquida de produção é o que está no timer
-    // O total de pausas é a soma total de ms convertida em segundos
     setProdData(prev => ({ 
       ...prev, 
-      durationSeconds: timer,
-      totalPauseSeconds: Math.floor(accumulatedPauseSeconds / 1000),
+      durationSeconds: timer, // Tempo líquido da produção
+      totalPauseSeconds: Math.floor(totalPauseMs / 1000), // Soma Total (Setup + Prod)
       pauses: pausesList
     }));
     
@@ -352,16 +345,13 @@ const App: React.FC = () => {
 
   const saveRecord = async () => {
     let finalStartTime = productionStartTime;
-    const MIN_VALID_TIMESTAMP = 1704067200000;
-    
-    if (!finalStartTime || finalStartTime < MIN_VALID_TIMESTAMP) {
+    if (!finalStartTime) {
       setError('Erro de Sincronização. Reinicie o apontamento.');
       return;
     }
 
     setLoading(true);
     try {
-      // Concatena todos os motivos de pausa encontrados durante a sessão (Setup + Produção)
       const concatenatedReasons = (prodData.pauses || [])
         .map(p => p.reason)
         .filter(r => r.length > 0)
@@ -385,14 +375,10 @@ const App: React.FC = () => {
       };
       
       await firebaseService.saveRecord(finalRecord);
-      
-      if (user) {
-        await firebaseService.deleteActiveSession(user.id);
-      }
+      if (user) await firebaseService.deleteActiveSession(user.id);
       
       const updatedRecords = await firebaseService.getAllRecords();
       setRecords(updatedRecords);
-      
       setStep(AppStep.COMPLETED);
     } catch (err) {
       setError('Erro ao salvar registro.');
@@ -428,12 +414,10 @@ const App: React.FC = () => {
 
     const today = new Date();
     const yesterday = subDays(today, 1);
-    
     const goalToday = getAvailableHoursByDate(today);
     const goalYesterday = getAvailableHoursByDate(yesterday);
 
     const userRecords = records.filter(r => r.operador === user.username);
-    
     const todayRecords = userRecords.filter(r => isSameDay(new Date(r.timestamp), today));
     const yesterdayRecords = userRecords.filter(r => isSameDay(new Date(r.timestamp), yesterday));
 
@@ -471,25 +455,22 @@ const App: React.FC = () => {
     if (analysisOperator !== 'ALL') {
       r = r.filter(item => item.operador === analysisOperator);
     }
-    const start = analysisStartDate ? startOfDay(parseISO(String(analysisStartDate))).getTime() : 0;
-    const end = analysisEndDate ? endOfDay(parseISO(String(analysisEndDate))).getTime() : Infinity;
+    // Fix: Removed redundant String() conversion to resolve TypeScript overload matching errors
+    const start = analysisStartDate ? startOfDay(parseISO(analysisStartDate)).getTime() : 0;
+    const end = analysisEndDate ? endOfDay(parseISO(analysisEndDate)).getTime() : Infinity;
     return r.filter(item => item.timestamp >= start && item.timestamp <= end);
   }, [records, analysisOperator, analysisStartDate, analysisEndDate]);
 
   const chartData = useMemo(() => {
     const dailyData: Record<string, { date: string, quantity: number, prodHours: number, meta: number }> = {};
-    
     filteredAnalysisRecords.forEach(record => {
       const dateKey = format(new Date(record.timestamp), 'dd/MM');
       if (!dailyData[dateKey]) {
-        // Line 461 fix: Ensure availableHoursPerDay is treated correctly as a number and that the object creation is clean
         dailyData[dateKey] = { date: dateKey, quantity: 0, prodHours: 0, meta: Number(availableHoursPerDay) };
       }
       dailyData[dateKey].quantity += record.quantity;
       dailyData[dateKey].prodHours += (record.durationSeconds + record.setupDurationSeconds) / 3600;
     });
-
-    // Fix: Explicitly ensuring a.date and b.date are strings for localeCompare, fixing potential "No overload matches this call" error
     return Object.values(dailyData).sort((a, b) => String(a.date).localeCompare(String(b.date)));
   }, [filteredAnalysisRecords, availableHoursPerDay]);
 
@@ -505,8 +486,9 @@ const App: React.FC = () => {
       );
     }
     if (tableStartDate || tableEndDate) {
-      const start = tableStartDate ? startOfDay(parseISO(String(tableStartDate))).getTime() : 0;
-      const end = tableEndDate ? endOfDay(parseISO(String(tableEndDate))).getTime() : Infinity;
+      // Fix: Removed redundant String() conversion to resolve TypeScript overload matching errors
+      const start = tableStartDate ? startOfDay(parseISO(tableStartDate)).getTime() : 0;
+      const end = tableEndDate ? endOfDay(parseISO(tableEndDate)).getTime() : Infinity;
       result = result.filter(r => r.timestamp >= start && r.timestamp <= end);
     }
     result.sort((a, b) => sortOrder === 'desc' ? b.timestamp - a.timestamp : a.timestamp - b.timestamp);
@@ -522,9 +504,9 @@ const App: React.FC = () => {
       'Máquina': r.maquina,
       'OP': r.op,
       'CP': r.cp,
-      'Duração Produção': formatDuration(r.durationSeconds),
-      'Duração Setup': formatDuration(r.setupDurationSeconds),
-      'Total Pausas': formatDuration(r.totalPauseSeconds),
+      'Duração Produção (Líquida)': formatDuration(r.durationSeconds),
+      'Duração Setup (Líquida)': formatDuration(r.setupDurationSeconds),
+      'Total Pausas (Sessão)': formatDuration(r.totalPauseSeconds),
       'Motivos das Pausas': r.pauseReasons || '',
       'Quantidade': r.quantity,
       'Observação': r.observation
@@ -548,8 +530,8 @@ const App: React.FC = () => {
 
         <div className="p-8">
           {error && (
-            <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-xl border border-red-100 font-medium">
-              {error}
+            <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-xl border border-red-100 font-medium flex items-center gap-2">
+              <AlertCircle size={16} /> {error}
             </div>
           )}
 
@@ -812,14 +794,6 @@ const App: React.FC = () => {
                       <input type="date" value={tableEndDate} onChange={e => setTableEndDate(e.target.value)} className="text-xs border-none outline-none flex-1" />
                     </div>
                  </div>
-                 <div className="flex justify-between items-center px-1">
-                    <button onClick={() => setSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')} className="text-[10px] font-bold text-gray-500 uppercase flex items-center gap-2 hover:text-blue-600">
-                      <ArrowUpDown size={12} /> Data: {sortOrder === 'desc' ? 'Novos' : 'Antigos'}
-                    </button>
-                    {(tableStartDate || tableEndDate || filterText) && (
-                      <button onClick={() => {setTableStartDate(''); setTableEndDate(''); setFilterText('');}} className="text-[10px] font-bold text-red-500 uppercase hover:underline">Limpar</button>
-                    )}
-                 </div>
                </div>
                <div className="overflow-x-auto rounded-3xl border border-gray-200">
                  <table className="w-full text-left text-sm">
@@ -866,14 +840,11 @@ const App: React.FC = () => {
                     <option>Romi D1000</option><option>Veker Mvk 1050</option><option>Torno Cnc Cosmos</option><option>Torno Convencional</option><option>Torno Mascote</option><option>Fresadora Ferramenteira</option>
                   </select>
                 </div>
-                
                 <button onClick={() => setStep(AppStep.DAILY_VIEW)} className="w-full bg-white border-2 border-blue-600 text-blue-600 font-bold py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-blue-50 transition-all">
                   <PieChart size={20} /> Produção Diária
                 </button>
               </div>
-              
               <button onClick={() => prodData.maquina ? setStep(AppStep.DETAILS) : setError('Selecione a máquina.')} className="w-full bg-blue-600 text-white font-bold py-3 rounded-xl shadow-lg hover:bg-blue-700 transition-all">Prosseguir</button>
-              
               <button onClick={() => {setUser(null); setStep(AppStep.LOGIN)}} className="w-full mt-4 flex items-center justify-center gap-2 text-gray-400 font-bold hover:text-red-500 transition-colors text-sm"><LogOut size={14} /> Sair do Sistema</button>
             </div>
           )}
@@ -1010,7 +981,8 @@ const App: React.FC = () => {
                 setProductionStartTime(null); 
                 setProductionEndTime(null); 
                 setPausesList([]);
-                setAccumulatedPauseSeconds(0);
+                setPhasePauseMs(0);
+                setTotalPauseMs(0);
                 setStep(user?.role === UserRole.ADMIN ? AppStep.ADMIN_MENU : AppStep.IDENTIFICATION); 
               }} className="w-full bg-blue-600 text-white font-bold py-4 rounded-2xl shadow-xl hover:bg-blue-700 transition-all">Novo Apontamento</button>
             </div>

@@ -39,10 +39,10 @@ export interface ActiveSession {
   isSetupMode: boolean;
   setupDurationSeconds: number;
   timestamp: number;
-  // Novos campos para pausa
   isPaused: boolean;
   pauseStartTime: number | null;
-  accumulatedPauseSeconds: number;
+  phasePauseMs: number; // Pausas da fase atual (setup ou prod)
+  totalPauseMs: number; // Soma de todas as pausas da sessão
   pauses: ProductionPause[];
 }
 
@@ -108,7 +108,6 @@ export const firebaseService = {
     }
   },
 
-  // Gerenciamento de Sessão Ativa (Cronômetro)
   async saveActiveSession(userId: string, session: ActiveSession): Promise<void> {
     const sessionRef = doc(db, 'active_sessions', userId);
     await setDoc(sessionRef, session);
