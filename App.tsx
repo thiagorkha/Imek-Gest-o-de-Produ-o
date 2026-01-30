@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { AppStep, User, UserRole, ProductionRecord } from './types';
+import { AppStep, User, UserRole, ProductionRecord, ProductionPause } from './types';
 import { firebaseService, ActiveSession } from './services/firebaseService';
 import { 
   ClipboardCheck, 
@@ -24,7 +24,9 @@ import {
   User as UserIcon,
   Cloud,
   History,
-  Target
+  Target,
+  Pause,
+  AlertCircle
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { format, startOfDay, endOfDay, parseISO, subDays, isSameDay } from 'date-fns';
@@ -39,8 +41,8 @@ import {
   Legend, 
   ResponsiveContainer, 
   Cell,
-  ComposedChart, // Fix: Import ComposedChart from recharts
-  Line // Fix: Import Line from recharts
+  ComposedChart,
+  Line
 } from 'recharts';
 
 const App: React.FC = () => {
@@ -74,6 +76,8 @@ const App: React.FC = () => {
     cp: '',
     durationSeconds: 0,
     setupDurationSeconds: 0,
+    totalPauseSeconds: 0,
+    pauses: [],
     quantity: 0,
     observation: ''
   });
@@ -83,6 +87,13 @@ const App: React.FC = () => {
   const [isSetupMode, setIsSetupMode] = useState(true);
   const [timerStartTime, setTimerStartTime] = useState<number | null>(null);
   const [timer, setTimer] = useState(0);
+
+  // Estados de Pausa
+  const [isPaused, setIsPaused] = useState(false);
+  const [pauseReason, setPauseReason] = useState('');
+  const [pauseStartTime, setPauseStartTime] = useState<number | null>(null);
+  const [accumulatedPauseSeconds, setAccumulatedPauseSeconds] = useState(0);
+  const [pausesList, setPausesList] = useState<ProductionPause[]>([]);
 
   // Helper para horas disponíveis por dia da semana
   const getAvailableHoursByDate = (date: Date) => {
@@ -114,8 +125,23 @@ const App: React.FC = () => {
             setProductionStartTime(session.startTime);
             setIsSetupMode(session.isSetupMode);
             setTimerStartTime(session.timestamp); 
-            const elapsed = Math.floor((Date.now() - session.timestamp) / 1000);
-            setTimer(elapsed);
+            
+            // Recuperar estados de pausa
+            setIsPaused(session.isPaused);
+            setPauseStartTime(session.pauseStartTime);
+            setAccumulatedPauseSeconds(session.accumulatedPauseSeconds);
+            setPausesList(session.pauses || []);
+
+            if (session.isPaused && session.pauseStartTime) {
+              // Se estava pausado, o timer fica parado no tempo líquido na hora da pausa
+              const netTimeAtPause = Math.floor((session.pauseStartTime - session.timestamp - session.accumulatedPauseSeconds) / 1000);
+              setTimer(netTimeAtPause);
+            } else {
+              // Se estava rodando, calcula o tempo líquido atual
+              const elapsedNet = Math.floor((Date.now() - session.timestamp - session.accumulatedPauseSeconds) / 1000);
+              setTimer(elapsedNet);
+            }
+            
             setStep(AppStep.TIMER);
           }
         } catch (err) {
@@ -128,15 +154,18 @@ const App: React.FC = () => {
     checkForActiveSession();
   }, [user]);
 
+  // Cronômetro principal
   useEffect(() => {
     let interval: any;
-    if (timerStartTime) {
+    if (timerStartTime && !isPaused) {
       interval = setInterval(() => {
-        setTimer(Math.floor((Date.now() - timerStartTime) / 1000));
+        // Tempo Líquido = (Agora - Início - Pausas Acumuladas)
+        const currentNet = Math.floor((Date.now() - timerStartTime - accumulatedPauseSeconds) / 1000);
+        setTimer(currentNet);
       }, 1000);
     }
     return () => clearInterval(interval);
-  }, [timerStartTime]);
+  }, [timerStartTime, isPaused, accumulatedPauseSeconds]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -146,7 +175,6 @@ const App: React.FC = () => {
       const loggedUser = await firebaseService.loginUser(username, password);
       if (loggedUser) {
         setUser(loggedUser);
-        // Carregar registros para dashboards do operador também
         const allRecords = await firebaseService.getAllRecords();
         setRecords(allRecords);
         
@@ -182,6 +210,26 @@ const App: React.FC = () => {
     }
   };
 
+  // --- LÓGICA DE PERSISTÊNCIA DE SESSÃO ---
+  const persistSession = async (overrideParams: Partial<ActiveSession> = {}) => {
+    if (!user || !timerStartTime) return;
+    const session: ActiveSession = {
+      maquina: prodData.maquina || '',
+      op: prodData.op || '',
+      cp: prodData.cp || '',
+      startTime: productionStartTime || Date.now(),
+      isSetupMode,
+      setupDurationSeconds: prodData.setupDurationSeconds || 0,
+      timestamp: timerStartTime,
+      isPaused,
+      pauseStartTime,
+      accumulatedPauseSeconds,
+      pauses: pausesList,
+      ...overrideParams
+    };
+    await firebaseService.saveActiveSession(user.id, session);
+  };
+
   const startProduction = async (mode: 'setup' | 'direct') => {
     if (!prodData.maquina || !prodData.op || !prodData.cp) {
       setError('Preencha todos os campos antes de iniciar.');
@@ -193,21 +241,60 @@ const App: React.FC = () => {
     setIsSetupMode(mode === 'setup');
     setTimerStartTime(now);
     setTimer(0);
+    setIsPaused(false);
+    setAccumulatedPauseSeconds(0);
+    setPausesList([]);
 
-    if (user) {
-      const session: ActiveSession = {
-        maquina: prodData.maquina || '',
-        op: prodData.op || '',
-        cp: prodData.cp || '',
-        startTime: now,
-        isSetupMode: mode === 'setup',
-        setupDurationSeconds: 0,
-        timestamp: now
-      };
-      await firebaseService.saveActiveSession(user.id, session);
-    }
+    await persistSession({
+      startTime: now,
+      isSetupMode: mode === 'setup',
+      timestamp: now,
+      isPaused: false,
+      accumulatedPauseSeconds: 0,
+      pauses: []
+    });
 
     setStep(AppStep.TIMER);
+  };
+
+  const handlePause = async () => {
+    const now = Date.now();
+    setIsPaused(true);
+    setPauseStartTime(now);
+    setPauseReason('');
+    await persistSession({ isPaused: true, pauseStartTime: now });
+  };
+
+  const handleResume = async () => {
+    if (!pauseReason.trim()) {
+      setError('Por favor, informe o motivo da pausa antes de retomar.');
+      return;
+    }
+    setError('');
+    const now = Date.now();
+    const pauseDuration = pauseStartTime ? Math.floor((now - pauseStartTime) / 1000) : 0;
+    
+    const newPause: ProductionPause = {
+      reason: pauseReason,
+      durationSeconds: pauseDuration,
+      timestamp: now
+    };
+
+    const newAccumulated = accumulatedPauseSeconds + (pauseDuration * 1000);
+    const newList = [...pausesList, newPause];
+
+    setAccumulatedPauseSeconds(newAccumulated);
+    setPausesList(newList);
+    setIsPaused(false);
+    setPauseStartTime(null);
+    setPauseReason('');
+
+    await persistSession({ 
+      isPaused: false, 
+      pauseStartTime: null, 
+      accumulatedPauseSeconds: newAccumulated,
+      pauses: newList
+    });
   };
 
   const finishSetupAndStartProd = async () => {
@@ -217,25 +304,27 @@ const App: React.FC = () => {
     setTimerStartTime(now);
     setTimer(0);
     setIsSetupMode(false);
+    setAccumulatedPauseSeconds(0); // Reiniciar acumulador para a fase de produção propriamente dita
+    setPausesList([]); // Limpar pausas do setup para o registro de produção (ou manter se quiser total)
 
-    if (user) {
-      const session: ActiveSession = {
-        maquina: prodData.maquina || '',
-        op: prodData.op || '',
-        cp: prodData.cp || '',
-        startTime: productionStartTime || now,
-        isSetupMode: false,
-        setupDurationSeconds: setupDuration,
-        timestamp: now
-      };
-      await firebaseService.saveActiveSession(user.id, session);
-    }
+    await persistSession({
+      isSetupMode: false,
+      setupDurationSeconds: setupDuration,
+      timestamp: now,
+      accumulatedPauseSeconds: 0,
+      pauses: []
+    });
   };
 
   const finishProduction = async () => {
     const now = Date.now();
     setProductionEndTime(now);
-    setProdData(prev => ({ ...prev, durationSeconds: timer }));
+    setProdData(prev => ({ 
+      ...prev, 
+      durationSeconds: timer,
+      totalPauseSeconds: Math.floor(accumulatedPauseSeconds / 1000),
+      pauses: pausesList
+    }));
     setTimerStartTime(null);
     setStep(AppStep.SUMMARY);
   };
@@ -258,8 +347,10 @@ const App: React.FC = () => {
         cp: prodData.cp || '',
         startTime: finalStartTime, 
         endTime: productionEndTime || Date.now(),
-        durationSeconds: (prodData.durationSeconds || 0) + (prodData.setupDurationSeconds || 0), // Tempo total
+        durationSeconds: prodData.durationSeconds || 0,
         setupDurationSeconds: prodData.setupDurationSeconds || 0,
+        totalPauseSeconds: prodData.totalPauseSeconds || 0,
+        pauses: prodData.pauses || [],
         quantity: prodData.quantity || 0,
         observation: prodData.observation || '',
         timestamp: Date.now()
@@ -270,7 +361,6 @@ const App: React.FC = () => {
         await firebaseService.deleteActiveSession(user.id);
       }
       
-      // Recarregar registros para atualizar dashboard
       const updatedRecords = await firebaseService.getAllRecords();
       setRecords(updatedRecords);
       
@@ -318,8 +408,9 @@ const App: React.FC = () => {
     const todayRecords = userRecords.filter(r => isSameDay(new Date(r.timestamp), today));
     const yesterdayRecords = userRecords.filter(r => isSameDay(new Date(r.timestamp), yesterday));
 
-    const todaySecs = todayRecords.reduce((acc, curr) => acc + curr.durationSeconds, 0);
-    const yesterdaySecs = yesterdayRecords.reduce((acc, curr) => acc + curr.durationSeconds, 0);
+    // Soma tempo líquido + tempo de setup
+    const todaySecs = todayRecords.reduce((acc, curr) => acc + curr.durationSeconds + curr.setupDurationSeconds, 0);
+    const yesterdaySecs = yesterdayRecords.reduce((acc, curr) => acc + curr.durationSeconds + curr.setupDurationSeconds, 0);
 
     const todayHours = todaySecs / 3600;
     const yesterdayHours = yesterdaySecs / 3600;
@@ -352,9 +443,9 @@ const App: React.FC = () => {
     if (analysisOperator !== 'ALL') {
       r = r.filter(item => item.operador === analysisOperator);
     }
-    // Fix: Ensure analysis dates are treated as strings for parseISO (Line 340 fix)
-    const start = analysisStartDate ? startOfDay(parseISO(String(analysisStartDate))).getTime() : 0;
-    const end = analysisEndDate ? endOfDay(parseISO(String(analysisEndDate))).getTime() : Infinity;
+    // Fix: Explicitly cast analysisStartDate/EndDate to string for parseISO
+    const start = analysisStartDate ? startOfDay(parseISO(analysisStartDate as string)).getTime() : 0;
+    const end = analysisEndDate ? endOfDay(parseISO(analysisEndDate as string)).getTime() : Infinity;
     return r.filter(item => item.timestamp >= start && item.timestamp <= end);
   }, [records, analysisOperator, analysisStartDate, analysisEndDate]);
 
@@ -362,13 +453,12 @@ const App: React.FC = () => {
     const dailyData: Record<string, { date: string, quantity: number, prodHours: number, meta: number }> = {};
     
     filteredAnalysisRecords.forEach(record => {
-      // Fix: convert timestamp (number) to Date for format() function
       const dateKey = format(new Date(record.timestamp), 'dd/MM');
       if (!dailyData[dateKey]) {
         dailyData[dateKey] = { date: dateKey, quantity: 0, prodHours: 0, meta: availableHoursPerDay };
       }
       dailyData[dateKey].quantity += record.quantity;
-      dailyData[dateKey].prodHours += record.durationSeconds / 3600;
+      dailyData[dateKey].prodHours += (record.durationSeconds + record.setupDurationSeconds) / 3600;
     });
 
     return Object.values(dailyData).sort((a, b) => a.date.localeCompare(b.date));
@@ -386,9 +476,9 @@ const App: React.FC = () => {
       );
     }
     if (tableStartDate || tableEndDate) {
-      // Fix: Ensure table dates are treated as strings for parseISO
-      const start = tableStartDate ? startOfDay(parseISO(String(tableStartDate))).getTime() : 0;
-      const end = tableEndDate ? endOfDay(parseISO(String(tableEndDate))).getTime() : Infinity;
+      // Fix: Explicitly cast tableStartDate/EndDate to string for parseISO
+      const start = tableStartDate ? startOfDay(parseISO(tableStartDate as string)).getTime() : 0;
+      const end = tableEndDate ? endOfDay(parseISO(tableEndDate as string)).getTime() : Infinity;
       result = result.filter(r => r.timestamp >= start && r.timestamp <= end);
     }
     result.sort((a, b) => sortOrder === 'desc' ? b.timestamp - a.timestamp : a.timestamp - b.timestamp);
@@ -404,8 +494,9 @@ const App: React.FC = () => {
       'Máquina': r.maquina,
       'OP': r.op,
       'CP': r.cp,
-      'Duração Total': formatDuration(r.durationSeconds),
+      'Duração Produção': formatDuration(r.durationSeconds),
       'Duração Setup': formatDuration(r.setupDurationSeconds),
+      'Duração Pausas': formatDuration(r.totalPauseSeconds),
       'Quantidade': r.quantity,
       'Observação': r.observation
     })));
@@ -458,7 +549,6 @@ const App: React.FC = () => {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* Card de Performance Atual */}
                 <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm relative overflow-hidden">
                   <div className="flex items-center justify-between mb-2">
                     <p className="text-xs font-bold text-gray-400 uppercase">Hoje</p>
@@ -469,7 +559,6 @@ const App: React.FC = () => {
                   <div className="absolute bottom-0 left-0 h-1 bg-blue-600 transition-all duration-1000" style={{ width: `${Math.min(dailyStats.todayPercent, 100)}%` }}></div>
                 </div>
 
-                {/* Card Comparativo Ontem */}
                 <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm">
                   <div className="flex items-center justify-between mb-2">
                     <p className="text-xs font-bold text-gray-400 uppercase">Ontem</p>
@@ -482,7 +571,6 @@ const App: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Gráfico de Meta */}
                 <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm flex flex-col">
                   <h4 className="text-[10px] font-bold text-gray-400 uppercase mb-4 flex items-center gap-2"><Target size={12}/> Gráfico de Ocupação</h4>
                   <div className="h-24 w-full">
@@ -502,7 +590,6 @@ const App: React.FC = () => {
                 </div>
               </div>
 
-              {/* Tabela de hoje */}
               <div className="space-y-4">
                 <h3 className="text-sm font-bold text-gray-700 uppercase tracking-widest px-1">Registros de Hoje</h3>
                 <div className="overflow-x-auto rounded-3xl border border-gray-200 bg-white">
@@ -519,7 +606,7 @@ const App: React.FC = () => {
                             <td className="px-6 py-4 font-bold text-gray-800">{r.maquina}</td>
                             <td className="px-6 py-4"><span className="text-blue-600 font-black">{r.op}</span><span className="text-[10px] text-gray-400 ml-2">{r.cp}</span></td>
                             <td className="px-6 py-4 text-center font-black text-gray-900">{r.quantity}</td>
-                            <td className="px-6 py-4 font-bold text-green-600">{formatDuration(r.durationSeconds)}</td>
+                            <td className="px-6 py-4 font-bold text-green-600">{formatDuration(r.durationSeconds + r.setupDurationSeconds)}</td>
                           </tr>
                         ))
                       )}
@@ -784,19 +871,53 @@ const App: React.FC = () => {
                   <Cloud size={12} /> SESSÃO SINCRONIZADA
                 </div>
               </div>
-              <h2 className="text-xl font-bold text-gray-800">{isSetupMode ? 'Setup em Andamento' : 'Produção em Andamento'}</h2>
-              <div className="bg-gray-900 text-green-400 p-8 rounded-3xl font-mono text-5xl border-4 border-gray-800 shadow-2xl tracking-tighter">{formatDuration(timer)}</div>
-              <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 text-left text-xs text-blue-800 font-medium">
-                Em execução na <span className="font-bold underline">{prodData.maquina}</span> para a <span className="font-bold underline">OP {prodData.op}</span>.
+              
+              <h2 className={`text-xl font-bold ${isPaused ? 'text-orange-600' : 'text-gray-800'}`}>
+                {isPaused ? 'PRODUÇÃO PAUSADA' : (isSetupMode ? 'Setup em Andamento' : 'Produção em Andamento')}
+              </h2>
+              
+              <div className={`p-8 rounded-3xl font-mono text-5xl border-4 shadow-2xl tracking-tighter transition-all ${isPaused ? 'bg-orange-50 text-orange-600 border-orange-200' : 'bg-gray-900 text-green-400 border-gray-800'}`}>
+                {formatDuration(timer)}
               </div>
-              {isSetupMode ? (
-                <button onClick={finishSetupAndStartProd} className="w-full bg-green-600 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg hover:bg-green-700"><Play size={20} /> Concluir Setup</button>
+
+              {!isPaused ? (
+                <div className="space-y-4">
+                   <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 text-left text-xs text-blue-800 font-medium">
+                    Em execução na <span className="font-bold underline">{prodData.maquina}</span> para a <span className="font-bold underline">OP {prodData.op}</span>.
+                  </div>
+                  
+                  <button onClick={handlePause} className="w-full bg-orange-500 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg hover:bg-orange-600">
+                    <Pause size={20} /> Pausar Produção
+                  </button>
+
+                  {isSetupMode ? (
+                    <button onClick={finishSetupAndStartProd} className="w-full bg-green-600 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg hover:bg-green-700"><Play size={20} /> Concluir Setup</button>
+                  ) : (
+                    <button onClick={finishProduction} className="w-full bg-red-600 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg hover:bg-red-700"><Square size={20} /> Finalizar</button>
+                  )}
+                </div>
               ) : (
-                <button onClick={finishProduction} className="w-full bg-red-600 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg hover:bg-red-700"><Square size={20} /> Finalizar</button>
+                <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
+                  <div className="bg-orange-50 p-5 rounded-3xl border border-orange-200 text-left space-y-3">
+                    <div className="flex items-center gap-2 text-orange-800 font-bold text-sm">
+                      <AlertCircle size={18} /> Informe o Motivo da Pausa:
+                    </div>
+                    <textarea 
+                      value={pauseReason} 
+                      onChange={e => setPauseReason(e.target.value)}
+                      className="w-full p-3 rounded-xl border border-orange-300 bg-white text-sm focus:ring-2 focus:ring-orange-500 outline-none h-24 placeholder-orange-200"
+                      placeholder="Ex: Manutenção, Falta de material, Almoço..."
+                    />
+                    <button onClick={handleResume} className="w-full bg-blue-600 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg hover:bg-blue-700 transition-all">
+                      <Play size={20} /> Retomar Produção
+                    </button>
+                  </div>
+                </div>
               )}
+
               <div className="pt-2">
                  <button onClick={() => {setUser(null); setStep(AppStep.LOGIN)}} className="text-gray-400 text-xs font-bold hover:text-red-500 flex items-center justify-center gap-1 mx-auto">
-                   <LogOut size={12} /> Pausar e Sair do App
+                   <LogOut size={12} /> Sair do App
                  </button>
               </div>
             </div>
@@ -805,13 +926,24 @@ const App: React.FC = () => {
           {step === AppStep.SUMMARY && (
             <div className="space-y-6">
               <h2 className="text-lg font-bold text-gray-800">Finalizar Apontamento</h2>
+              <div className="grid grid-cols-2 gap-3">
+                 <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
+                    <span className="text-[10px] text-gray-400 font-bold uppercase block">Tempo Líquido</span>
+                    <span className="text-lg font-black text-green-600">{formatDuration(prodData.durationSeconds || 0)}</span>
+                 </div>
+                 <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
+                    <span className="text-[10px] text-gray-400 font-bold uppercase block">Tempo de Pausas</span>
+                    <span className="text-lg font-black text-orange-600">{formatDuration(prodData.totalPauseSeconds || 0)}</span>
+                 </div>
+              </div>
+              
               <div>
                 <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-widest">Quantidade Produzida</label>
                 <input type="number" value={prodData.quantity} onChange={e => setProdData(prev => ({ ...prev, quantity: parseInt(e.target.value) || 0 }))} className="w-full p-4 rounded-xl border border-gray-200 bg-gray-50 text-xl font-black text-blue-600 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="0" />
               </div>
               <div>
-                <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-widest">Observações</label>
-                <textarea value={prodData.observation} onChange={e => setProdData(prev => ({ ...prev, observation: e.target.value }))} className="w-full p-3 rounded-xl border border-gray-200 bg-gray-50 h-24 text-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder="Ocorrências..." />
+                <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-widest">Observações Finais</label>
+                <textarea value={prodData.observation} onChange={e => setProdData(prev => ({ ...prev, observation: e.target.value }))} className="w-full p-3 rounded-xl border border-gray-200 bg-gray-50 h-24 text-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder="Alguma ocorrência extra durante o turno?" />
               </div>
               <button onClick={saveRecord} disabled={loading} className="w-full bg-blue-600 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-blue-700 active:scale-[0.98] transition-all">{loading ? 'Salvando...' : 'Gravar Apontamento'}</button>
             </div>
@@ -822,7 +954,20 @@ const App: React.FC = () => {
               <div className="bg-green-100 p-8 rounded-full inline-block text-green-600 shadow-inner"><CheckCircle2 size={70} /></div>
               <h2 className="text-3xl font-black text-gray-800">Sucesso!</h2>
               <p className="text-gray-500 font-medium">Os dados foram sincronizados com o banco de dados da IMEK.</p>
-              <button onClick={() => { setProdData({ maquina: prodData.maquina, operador: user?.username }); setProductionStartTime(null); setProductionEndTime(null); setStep(user?.role === UserRole.ADMIN ? AppStep.ADMIN_MENU : AppStep.IDENTIFICATION); }} className="w-full bg-blue-600 text-white font-bold py-4 rounded-2xl shadow-xl hover:bg-blue-700 transition-all">Novo Apontamento</button>
+              <button onClick={() => { 
+                setProdData({ 
+                  maquina: prodData.maquina, 
+                  operador: user?.username,
+                  pauses: [],
+                  durationSeconds: 0,
+                  totalPauseSeconds: 0
+                }); 
+                setProductionStartTime(null); 
+                setProductionEndTime(null); 
+                setPausesList([]);
+                setAccumulatedPauseSeconds(0);
+                setStep(user?.role === UserRole.ADMIN ? AppStep.ADMIN_MENU : AppStep.IDENTIFICATION); 
+              }} className="w-full bg-blue-600 text-white font-bold py-4 rounded-2xl shadow-xl hover:bg-blue-700 transition-all">Novo Apontamento</button>
             </div>
           )}
         </div>

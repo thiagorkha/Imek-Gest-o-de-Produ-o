@@ -1,5 +1,5 @@
 
-// Fix: Use standard modular import for initializeApp from firebase/app
+// Use standard modular import for initializeApp from firebase/app
 import { initializeApp } from 'firebase/app';
 import { 
   getFirestore, 
@@ -14,7 +14,7 @@ import {
   getDoc,
   deleteDoc
 } from 'firebase/firestore';
-import { ProductionRecord, User, UserRole } from '../types';
+import { ProductionRecord, User, UserRole, ProductionPause } from '../types';
 
 // Standard Firebase configuration for the project
 const firebaseConfig = {
@@ -39,6 +39,11 @@ export interface ActiveSession {
   isSetupMode: boolean;
   setupDurationSeconds: number;
   timestamp: number;
+  // Novos campos para pausa
+  isPaused: boolean;
+  pauseStartTime: number | null;
+  accumulatedPauseSeconds: number;
+  pauses: ProductionPause[];
 }
 
 export const firebaseService = {

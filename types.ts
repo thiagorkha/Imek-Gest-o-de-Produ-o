@@ -10,6 +10,12 @@ export interface User {
   role: UserRole;
 }
 
+export interface ProductionPause {
+  reason: string;
+  durationSeconds: number;
+  timestamp: number;
+}
+
 export interface ProductionRecord {
   id?: string;
   operador: string;
@@ -20,6 +26,8 @@ export interface ProductionRecord {
   endTime: number;
   durationSeconds: number;
   setupDurationSeconds: number;
+  totalPauseSeconds: number;
+  pauses: ProductionPause[];
   quantity: number;
   observation: string;
   timestamp: number;
