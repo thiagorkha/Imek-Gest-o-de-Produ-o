@@ -28,6 +28,7 @@ export interface ProductionRecord {
   setupDurationSeconds: number;
   totalPauseSeconds: number;
   pauses: ProductionPause[];
+  pauseReasons: string; // Motivos concatenados por "/"
   quantity: number;
   observation: string;
   timestamp: number;
