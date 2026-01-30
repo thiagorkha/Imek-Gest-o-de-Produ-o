@@ -1,44 +1,30 @@
 
 # Histórico de Desenvolvimento - IMEK Gestão de Produção
 
-## [v1.5.0] - Dashboards de Inteligência e Filtros Dinâmicos
+## [v1.5.0] - Dashboards de Inteligência Industrial e Filtros Avançados
 - **Data**: 29 de Janeiro de 2026
 - **Mudanças**:
-    - **Filtros de Data nos Registros**: Implementação de seleção de intervalo (De/Até) na listagem de apontamentos salvos.
-    - **Gráficos Industriais**: Integração da biblioteca Recharts para visualização de performance.
-    - **Novo Módulo de Análise**:
-        - Filtro por Operador específico para análise de produtividade individual.
-        - Definição de meta de Horas Disponíveis por Dia.
-        - Gráfico de barras para volume de peças produzidas.
-        - Gráfico composto para Eficiência de Horas (Real vs Meta).
-    - **Sincronização com IA**: O Gemini 3 Pro agora analisa contextualmente os filtros aplicados e as metas definidas pelo usuário.
+    - **Correção de Build**: Integração definitiva da biblioteca Recharts no ambiente Vite.
+    - **Filtros de Data nos Registros**: Adição de campos de data inicial e final na listagem de apontamentos para consultas retroativas.
+    - **Módulo de Análise com Dashboard**:
+        - Filtro seletivo por Operador e Intervalo de Datas.
+        - Configuração dinâmica de "Meta de Horas Disponíveis".
+        - Gráfico 1: Produção diária quantitativa (Bar Chart).
+        - Gráfico 2: Eficiência temporal (Composed Chart) comparando Horas Reais vs Meta de Disponibilidade.
+    - **Integração IA Gemini**: Análise automatizada baseada nas métricas de disponibilidade e produção filtradas.
 
 ## [v1.4.6] - Redundância de Marco Temporal (Session Backup)
 - **Data**: 29 de Janeiro de 2026
-- **Mudanças**: 
-    - Implementação de salvamento paralelo do `startTime` no `sessionStorage`.
-    - Lógica de recuperação automática e bloqueio de timestamps inválidos (pré-2024).
-
-## [v1.4.5] - Blindagem do Estado
-- **Data**: 29 de Janeiro de 2026
-- **Mudanças**: Isolamento do `startTime` em estado dedicado para evitar reset por inputs do formulário.
+- **Mudanças**: Salvamento paralelo no `sessionStorage` e recuperação automática de timestamps.
 
 ## [v1.4.0] - Expansão Gestão & Inteligência Artificial
 - **Data**: 28 de Janeiro de 2026
-- **Mudanças**: Portal do Administrador e Integração Gemini.
-
-## [v1.3.0] - Módulo de Relatórios e Exportação
-- **Data**: 27 de Janeiro de 2026
-- **Mudanças**: Tabela de registros e exportação Excel.
-
-## [v1.2.0] - Sistema de Autenticação
-- **Data**: 26 de Janeiro de 2026
-- **Mudanças**: Login, Cadastro e Controle de Acesso (Roles).
+- **Mudanças**: Portal do Administrador e Integração Gemini inicial.
 
 ## [v1.1.0] - Migração para Firebase
 - **Data**: 25 de Janeiro de 2026
-- **Mudanças**: Firestore como banco de dados principal.
+- **Mudanças**: Transição para Cloud Firestore.
 
 ## [v1.0.0] - Versão Inicial (Legado)
 - **Data**: Janeiro de 2026
-- **Descrição**: Aplicação base operando via scripts Google Sheets.
+- **Descrição**: Aplicação operando via scripts Google Sheets.
