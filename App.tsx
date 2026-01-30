@@ -771,7 +771,7 @@ const App: React.FC = () => {
               </div>
               <div className="flex gap-3">
                 <button onClick={() => startProduction('setup')} className="flex-1 bg-green-600 text-white font-bold py-3 rounded-xl text-sm shadow-md hover:bg-green-700 transition-colors">Setup</button>
-                <button onClick={() => startProduction('direct')} className="flex-1 bg-blue-600 text-white font-bold py-3 rounded-xl text-sm shadow-md hover:bg-blue-700 transition-colors">Direto</button>
+                <button onClick={() => startProduction('direct')} className="flex-1 bg-blue-600 text-white font-bold py-3 rounded-xl text-sm shadow-md hover:bg-blue-700 transition-colors">Iniciar</button>
               </div>
               <button onClick={() => setStep(AppStep.IDENTIFICATION)} className="w-full text-gray-400 text-sm font-bold">Voltar</button>
             </div>
