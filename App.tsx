@@ -22,11 +22,12 @@ import {
   TrendingUp,
   Clock,
   User as UserIcon,
-  Cloud
+  Cloud,
+  History,
+  Target
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-// Fix: Use named imports for date-fns functions to avoid "not callable" errors in newer versions or environments
-import { format, startOfDay, endOfDay, parseISO } from 'date-fns';
+import { format, startOfDay, endOfDay, parseISO, subDays, isSameDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { 
   BarChart, 
@@ -37,8 +38,9 @@ import {
   Tooltip, 
   Legend, 
   ResponsiveContainer, 
-  Line, 
-  ComposedChart 
+  Cell,
+  ComposedChart, // Fix: Import ComposedChart from recharts
+  Line // Fix: Import Line from recharts
 } from 'recharts';
 
 const App: React.FC = () => {
@@ -59,7 +61,6 @@ const App: React.FC = () => {
   const [tableEndDate, setTableEndDate] = useState('');
 
   // States for Enhanced Analysis
-  // Fix: Call format using the named import reference
   const [analysisOperator, setAnalysisOperator] = useState('ALL');
   const [analysisStartDate, setAnalysisStartDate] = useState(format(new Date(new Date().setDate(new Date().getDate() - 7)), 'yyyy-MM-dd'));
   const [analysisEndDate, setAnalysisEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
@@ -83,6 +84,17 @@ const App: React.FC = () => {
   const [timerStartTime, setTimerStartTime] = useState<number | null>(null);
   const [timer, setTimer] = useState(0);
 
+  // Helper para horas disponíveis por dia da semana
+  const getAvailableHoursByDate = (date: Date) => {
+    const day = date.getDay(); // 0 (Dom) a 6 (Sab)
+    switch(day) {
+      case 1: case 2: case 3: case 4: return 9; // Seg a Qui
+      case 5: return 8; // Sex
+      case 6: return 4; // Sab
+      default: return 0; // Dom
+    }
+  };
+
   // Recuperar sessão ativa ao carregar usuário
   useEffect(() => {
     const checkForActiveSession = async () => {
@@ -101,12 +113,9 @@ const App: React.FC = () => {
             }));
             setProductionStartTime(session.startTime);
             setIsSetupMode(session.isSetupMode);
-            setTimerStartTime(session.timestamp); // Tempo relativo ao último evento salvo
-            
-            // Calculamos o tempo transcorrido desde o início da fase atual
+            setTimerStartTime(session.timestamp); 
             const elapsed = Math.floor((Date.now() - session.timestamp) / 1000);
             setTimer(elapsed);
-            
             setStep(AppStep.TIMER);
           }
         } catch (err) {
@@ -137,6 +146,10 @@ const App: React.FC = () => {
       const loggedUser = await firebaseService.loginUser(username, password);
       if (loggedUser) {
         setUser(loggedUser);
+        // Carregar registros para dashboards do operador também
+        const allRecords = await firebaseService.getAllRecords();
+        setRecords(allRecords);
+        
         if (loggedUser.role === UserRole.ADMIN) {
           setStep(AppStep.ADMIN_MENU);
         } else {
@@ -245,7 +258,7 @@ const App: React.FC = () => {
         cp: prodData.cp || '',
         startTime: finalStartTime, 
         endTime: productionEndTime || Date.now(),
-        durationSeconds: prodData.durationSeconds || 0,
+        durationSeconds: (prodData.durationSeconds || 0) + (prodData.setupDurationSeconds || 0), // Tempo total
         setupDurationSeconds: prodData.setupDurationSeconds || 0,
         quantity: prodData.quantity || 0,
         observation: prodData.observation || '',
@@ -256,6 +269,10 @@ const App: React.FC = () => {
       if (user) {
         await firebaseService.deleteActiveSession(user.id);
       }
+      
+      // Recarregar registros para atualizar dashboard
+      const updatedRecords = await firebaseService.getAllRecords();
+      setRecords(updatedRecords);
       
       setStep(AppStep.COMPLETED);
     } catch (err) {
@@ -286,6 +303,45 @@ const App: React.FC = () => {
     }
   };
 
+  // --- LOGICA DE PRODUÇÃO DIÁRIA (OPERADOR) ---
+  const dailyStats = useMemo(() => {
+    if (!user) return { todayPercent: 0, yesterdayPercent: 0, todayHours: 0, yesterdayHours: 0, todayRecords: [], goalToday: 0 };
+
+    const today = new Date();
+    const yesterday = subDays(today, 1);
+    
+    const goalToday = getAvailableHoursByDate(today);
+    const goalYesterday = getAvailableHoursByDate(yesterday);
+
+    const userRecords = records.filter(r => r.operador === user.username);
+    
+    const todayRecords = userRecords.filter(r => isSameDay(new Date(r.timestamp), today));
+    const yesterdayRecords = userRecords.filter(r => isSameDay(new Date(r.timestamp), yesterday));
+
+    const todaySecs = todayRecords.reduce((acc, curr) => acc + curr.durationSeconds, 0);
+    const yesterdaySecs = yesterdayRecords.reduce((acc, curr) => acc + curr.durationSeconds, 0);
+
+    const todayHours = todaySecs / 3600;
+    const yesterdayHours = yesterdaySecs / 3600;
+
+    const todayPercent = goalToday > 0 ? (todayHours / goalToday) * 100 : 0;
+    const yesterdayPercent = goalYesterday > 0 ? (yesterdayHours / goalYesterday) * 100 : 0;
+
+    return {
+      todayPercent: Math.round(todayPercent),
+      yesterdayPercent: Math.round(yesterdayPercent),
+      todayHours: todayHours.toFixed(1),
+      yesterdayHours: yesterdayHours.toFixed(1),
+      todayRecords,
+      goalToday
+    };
+  }, [records, user]);
+
+  const dailyChartData = [
+    { name: 'Meta', horas: dailyStats.goalToday, fill: '#e2e8f0' },
+    { name: 'Realizado', horas: parseFloat(dailyStats.todayHours), fill: '#3b82f6' }
+  ];
+
   const operatorsList = useMemo(() => {
     const ops = new Set(records.map(r => r.operador));
     return ['ALL', ...Array.from(ops)];
@@ -296,9 +352,9 @@ const App: React.FC = () => {
     if (analysisOperator !== 'ALL') {
       r = r.filter(item => item.operador === analysisOperator);
     }
-    // Fix: Call startOfDay, parseISO and endOfDay using the named import references
-    const start = analysisStartDate ? startOfDay(parseISO(analysisStartDate)).getTime() : 0;
-    const end = analysisEndDate ? endOfDay(parseISO(analysisEndDate)).getTime() : Infinity;
+    // Fix: Ensure analysis dates are treated as strings for parseISO (Line 340 fix)
+    const start = analysisStartDate ? startOfDay(parseISO(String(analysisStartDate))).getTime() : 0;
+    const end = analysisEndDate ? endOfDay(parseISO(String(analysisEndDate))).getTime() : Infinity;
     return r.filter(item => item.timestamp >= start && item.timestamp <= end);
   }, [records, analysisOperator, analysisStartDate, analysisEndDate]);
 
@@ -306,8 +362,8 @@ const App: React.FC = () => {
     const dailyData: Record<string, { date: string, quantity: number, prodHours: number, meta: number }> = {};
     
     filteredAnalysisRecords.forEach(record => {
-      // Fix: Call format using the named import reference
-      const dateKey = format(record.timestamp, 'dd/MM');
+      // Fix: convert timestamp (number) to Date for format() function
+      const dateKey = format(new Date(record.timestamp), 'dd/MM');
       if (!dailyData[dateKey]) {
         dailyData[dateKey] = { date: dateKey, quantity: 0, prodHours: 0, meta: availableHoursPerDay };
       }
@@ -329,10 +385,10 @@ const App: React.FC = () => {
         r.cp.toLowerCase().includes(lowFilter)
       );
     }
-    // Fix: Call startOfDay, parseISO and endOfDay using the named import references
     if (tableStartDate || tableEndDate) {
-      const start = tableStartDate ? startOfDay(parseISO(tableStartDate)).getTime() : 0;
-      const end = tableEndDate ? endOfDay(parseISO(tableEndDate)).getTime() : Infinity;
+      // Fix: Ensure table dates are treated as strings for parseISO
+      const start = tableStartDate ? startOfDay(parseISO(String(tableStartDate))).getTime() : 0;
+      const end = tableEndDate ? endOfDay(parseISO(String(tableEndDate))).getTime() : Infinity;
       result = result.filter(r => r.timestamp >= start && r.timestamp <= end);
     }
     result.sort((a, b) => sortOrder === 'desc' ? b.timestamp - a.timestamp : a.timestamp - b.timestamp);
@@ -340,29 +396,27 @@ const App: React.FC = () => {
   }, [records, filterText, sortOrder, tableStartDate, tableEndDate]);
 
   const exportToExcel = () => {
-    // Fix: Call format using the named import reference
     const ws = XLSX.utils.json_to_sheet(filteredAndSortedRecords.map(r => ({
-      'Data': format(r.timestamp, 'dd/MM/yyyy', { locale: ptBR }),
-      'Hora Início': format(r.startTime, 'HH:mm:ss', { locale: ptBR }),
-      'Hora Fim': format(r.endTime, 'HH:mm:ss', { locale: ptBR }),
+      'Data': format(new Date(r.timestamp), 'dd/MM/yyyy', { locale: ptBR }),
+      'Hora Início': format(new Date(r.startTime), 'HH:mm:ss', { locale: ptBR }),
+      'Hora Fim': format(new Date(r.endTime), 'HH:mm:ss', { locale: ptBR }),
       'Operador': r.operador,
       'Máquina': r.maquina,
       'OP': r.op,
       'CP': r.cp,
-      'Duração Produção': formatDuration(r.durationSeconds),
+      'Duração Total': formatDuration(r.durationSeconds),
       'Duração Setup': formatDuration(r.setupDurationSeconds),
       'Quantidade': r.quantity,
       'Observação': r.observation
     })));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Produção");
-    // Fix: Call format using the named import reference
     XLSX.writeFile(wb, `IMEK_Relatorio_${format(new Date(), 'yyyyMMdd_HHmm')}.xlsx`);
   };
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
-      <div className={`w-full ${[AppStep.SAVED_RECORDS, AppStep.ANALYSIS].includes(step) ? 'max-w-6xl' : 'max-w-md'} bg-white rounded-3xl shadow-xl overflow-hidden border border-gray-100 transition-all duration-300`}>
+      <div className={`w-full ${[AppStep.SAVED_RECORDS, AppStep.ANALYSIS, AppStep.DAILY_VIEW].includes(step) ? 'max-w-6xl' : 'max-w-md'} bg-white rounded-3xl shadow-xl overflow-hidden border border-gray-100 transition-all duration-300`}>
         
         <div className="bg-white p-6 flex flex-col items-center border-b border-gray-100">
            <div className="bg-blue-600 p-3 rounded-2xl mb-4 shadow-lg shadow-blue-200">
@@ -394,6 +448,86 @@ const App: React.FC = () => {
               </button>
               <button type="button" onClick={() => setStep(AppStep.REGISTER)} className="w-full text-blue-600 text-sm font-bold flex items-center justify-center gap-2"><UserPlus size={16} /> Novo Cadastro</button>
             </form>
+          )}
+
+          {step === AppStep.DAILY_VIEW && (
+            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="flex items-center gap-2">
+                 <button onClick={() => setStep(AppStep.IDENTIFICATION)} className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors"><ArrowLeft size={16} /></button>
+                 <h2 className="text-xl font-bold text-gray-800">Minha Produção Diária</h2>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Card de Performance Atual */}
+                <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm relative overflow-hidden">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-bold text-gray-400 uppercase">Hoje</p>
+                    <div className="bg-blue-50 p-2 rounded-xl text-blue-600"><Clock size={20} /></div>
+                  </div>
+                  <p className="text-3xl font-black text-gray-900">{dailyStats.todayPercent}%</p>
+                  <p className="text-xs text-gray-500 font-medium">{dailyStats.todayHours}h de {dailyStats.goalToday}h meta</p>
+                  <div className="absolute bottom-0 left-0 h-1 bg-blue-600 transition-all duration-1000" style={{ width: `${Math.min(dailyStats.todayPercent, 100)}%` }}></div>
+                </div>
+
+                {/* Card Comparativo Ontem */}
+                <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-bold text-gray-400 uppercase">Ontem</p>
+                    <div className="bg-indigo-50 p-2 rounded-xl text-indigo-600"><History size={20} /></div>
+                  </div>
+                  <p className="text-3xl font-black text-gray-900">{dailyStats.yesterdayPercent}%</p>
+                  <div className={`flex items-center gap-1 text-xs font-bold ${dailyStats.todayPercent >= dailyStats.yesterdayPercent ? 'text-green-500' : 'text-red-500'}`}>
+                    <TrendingUp size={12} className={dailyStats.todayPercent < dailyStats.yesterdayPercent ? 'rotate-180' : ''} />
+                    {dailyStats.todayPercent - dailyStats.yesterdayPercent}% em relação a ontem
+                  </div>
+                </div>
+
+                {/* Gráfico de Meta */}
+                <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm flex flex-col">
+                  <h4 className="text-[10px] font-bold text-gray-400 uppercase mb-4 flex items-center gap-2"><Target size={12}/> Gráfico de Ocupação</h4>
+                  <div className="h-24 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart layout="vertical" data={dailyChartData}>
+                        <XAxis type="number" hide domain={[0, dailyStats.goalToday > 0 ? dailyStats.goalToday : 9]} />
+                        <YAxis type="category" dataKey="name" hide />
+                        <Tooltip cursor={{fill: 'transparent'}} contentStyle={{fontSize: '10px', borderRadius: '8px'}} />
+                        <Bar dataKey="horas" radius={[0, 4, 4, 0]} barSize={20}>
+                          {dailyChartData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.fill} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+
+              {/* Tabela de hoje */}
+              <div className="space-y-4">
+                <h3 className="text-sm font-bold text-gray-700 uppercase tracking-widest px-1">Registros de Hoje</h3>
+                <div className="overflow-x-auto rounded-3xl border border-gray-200 bg-white">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-gray-50 text-gray-400 font-bold uppercase text-[10px] tracking-wider border-b border-gray-100">
+                      <tr><th className="px-6 py-4">Equipamento</th><th className="px-6 py-4">OP/CP</th><th className="px-6 py-4 text-center">Qtde</th><th className="px-6 py-4">Duração</th></tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {dailyStats.todayRecords.length === 0 ? (
+                        <tr><td colSpan={4} className="text-center py-10 text-gray-400 italic font-medium">Nenhum apontamento hoje.</td></tr>
+                      ) : (
+                        dailyStats.todayRecords.map(r => (
+                          <tr key={r.id} className="hover:bg-blue-50/20 transition-colors">
+                            <td className="px-6 py-4 font-bold text-gray-800">{r.maquina}</td>
+                            <td className="px-6 py-4"><span className="text-blue-600 font-black">{r.op}</span><span className="text-[10px] text-gray-400 ml-2">{r.cp}</span></td>
+                            <td className="px-6 py-4 text-center font-black text-gray-900">{r.quantity}</td>
+                            <td className="px-6 py-4 font-bold text-green-600">{formatDuration(r.durationSeconds)}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
           )}
 
           {step === AppStep.REGISTER && (
@@ -582,8 +716,8 @@ const App: React.FC = () => {
                       filteredAndSortedRecords.map(r => (
                        <tr key={r.id} className="hover:bg-blue-50/40 transition-colors">
                          <td className="px-6 py-4">
-                           <div className="font-bold text-gray-900">{format(r.startTime, 'dd/MM/yy', { locale: ptBR })}</div>
-                           <div className="text-[10px] text-gray-400 font-medium">{format(r.startTime, 'HH:mm')}</div>
+                           <div className="font-bold text-gray-900">{format(new Date(r.startTime), 'dd/MM/yy', { locale: ptBR })}</div>
+                           <div className="text-[10px] text-gray-400 font-medium">{format(new Date(r.startTime), 'HH:mm')}</div>
                          </td>
                          <td className="px-6 py-4">
                            <div className="text-gray-800 font-semibold">{r.maquina}</div>
@@ -608,14 +742,23 @@ const App: React.FC = () => {
           {step === AppStep.IDENTIFICATION && (
             <div className="space-y-6">
               <h2 className="text-lg font-bold text-gray-800">Passo 1: Identificação</h2>
-              <div>
-                <label className="block text-sm font-semibold text-gray-600 mb-1">Máquina / Linha</label>
-                <select value={prodData.maquina} onChange={e => setProdData(prev => ({ ...prev, maquina: e.target.value }))} className="w-full p-3 rounded-xl border border-gray-200 bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none">
-                  <option value="">Selecione...</option>
-                  <option>Romi D1000</option><option>Veker Mvk 1050</option><option>Torno Cnc Cosmos</option><option>Torno Convencional</option><option>Torno Mascote</option><option>Fresadora Ferramenteira</option>
-                </select>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-600 mb-1">Máquina / Linha</label>
+                  <select value={prodData.maquina} onChange={e => setProdData(prev => ({ ...prev, maquina: e.target.value }))} className="w-full p-3 rounded-xl border border-gray-200 bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none">
+                    <option value="">Selecione...</option>
+                    <option>Romi D1000</option><option>Veker Mvk 1050</option><option>Torno Cnc Cosmos</option><option>Torno Convencional</option><option>Torno Mascote</option><option>Fresadora Ferramenteira</option>
+                  </select>
+                </div>
+                
+                <button onClick={() => setStep(AppStep.DAILY_VIEW)} className="w-full bg-white border-2 border-blue-600 text-blue-600 font-bold py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-blue-50 transition-all">
+                  <PieChart size={20} /> Produção Diária
+                </button>
               </div>
+              
               <button onClick={() => prodData.maquina ? setStep(AppStep.DETAILS) : setError('Selecione a máquina.')} className="w-full bg-blue-600 text-white font-bold py-3 rounded-xl shadow-lg hover:bg-blue-700 transition-all">Prosseguir</button>
+              
+              <button onClick={() => {setUser(null); setStep(AppStep.LOGIN)}} className="w-full mt-4 flex items-center justify-center gap-2 text-gray-400 font-bold hover:text-red-500 transition-colors text-sm"><LogOut size={14} /> Sair do Sistema</button>
             </div>
           )}
 
