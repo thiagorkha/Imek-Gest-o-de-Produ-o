@@ -24,9 +24,12 @@ import {
   User as UserIcon
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { format, isWithinInterval, startOfDay, endOfDay, parseISO } from 'date-fns';
+// Fix: Import date-fns functions directly from their subpaths to ensure they are found by the TypeScript compiler and bundler.
+import format from 'date-fns/format';
+import startOfDay from 'date-fns/startOfDay';
+import endOfDay from 'date-fns/endOfDay';
+import parseISO from 'date-fns/parseISO';
 import { ptBR } from 'date-fns/locale/pt-BR';
-import { GoogleGenAI } from "@google/genai";
 import { 
   BarChart, 
   Bar, 
@@ -58,8 +61,6 @@ const App: React.FC = () => {
   const [tableEndDate, setTableEndDate] = useState('');
 
   // States for Enhanced Analysis
-  const [analysis, setAnalysis] = useState<string>('');
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisOperator, setAnalysisOperator] = useState('ALL');
   const [analysisStartDate, setAnalysisStartDate] = useState(format(new Date(new Date().setDate(new Date().getDate() - 7)), 'yyyy-MM-dd'));
   const [analysisEndDate, setAnalysisEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
@@ -255,32 +256,9 @@ const App: React.FC = () => {
     return Object.values(dailyData).sort((a, b) => a.date.localeCompare(b.date));
   }, [filteredAnalysisRecords, availableHoursPerDay]);
 
-  const generateAnalysis = async () => {
-    setIsAnalyzing(true);
+  const processAnalysis = () => {
     setError('');
-    setAnalysis('');
     setShowAnalysisResult(true);
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-pro-preview',
-        contents: `Analise os dados de produção IMEK. Meta diária: ${availableHoursPerDay}h. Operador: ${analysisOperator}. Período: ${analysisStartDate} a ${analysisEndDate}. Dados agregados: ${JSON.stringify(chartData)}`,
-        config: { 
-          systemInstruction: "Você é um consultor de produção da IMEK. Analise se as metas de horas disponíveis estão sendo batidas e como está a produtividade de peças por dia. Use Markdown.",
-          temperature: 0.7 
-        }
-      });
-
-      if (response.text) {
-        setAnalysis(response.text.trim());
-      } else {
-        setError('IA sem resposta.');
-      }
-    } catch (err: any) {
-      setError(`Erro IA: ${err.message}`);
-    } finally {
-      setIsAnalyzing(false);
-    }
   };
 
   // --- TABLE FILTERING ---
@@ -399,7 +377,7 @@ const App: React.FC = () => {
                </button>
                <button onClick={() => { loadAdminRecords(); setStep(AppStep.ANALYSIS); setShowAnalysisResult(false); }} className="w-full flex items-center gap-4 p-5 bg-white rounded-2xl border border-gray-200 hover:bg-gray-50 transition-all text-left">
                  <div className="bg-orange-500 p-3 rounded-xl text-white shadow-md"><PieChart size={24} /></div>
-                 <div><span className="block font-bold text-gray-900">Dashboard de Performance</span><span className="text-xs text-gray-500">Gráficos e Análise IA</span></div>
+                 <div><span className="block font-bold text-gray-900">Dashboard de Performance</span><span className="text-xs text-gray-500">Gráficos de Produção</span></div>
                </button>
             </div>
           )}
@@ -413,7 +391,7 @@ const App: React.FC = () => {
 
               {!showAnalysisResult ? (
                 <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm space-y-5">
-                  <h3 className="text-lg font-bold text-gray-700 flex items-center gap-2"><Sparkles className="text-orange-500" /> Configuração da Análise</h3>
+                  <h3 className="text-lg font-bold text-gray-700 flex items-center gap-2">Configuração da Análise</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Filtrar Operador</label>
@@ -434,13 +412,38 @@ const App: React.FC = () => {
                       <input type="date" value={analysisEndDate} onChange={e => setAnalysisEndDate(e.target.value)} className="w-full p-2.5 rounded-xl border border-gray-300 bg-white text-sm focus:ring-2 focus:ring-blue-500" />
                     </div>
                   </div>
-                  <button onClick={generateAnalysis} className="w-full bg-blue-600 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-blue-700 flex items-center justify-center gap-2">
-                    <TrendingUp size={20} /> Ver Resultados e Insights
+                  <button onClick={processAnalysis} className="w-full bg-blue-600 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-blue-700 flex items-center justify-center gap-2">
+                    <TrendingUp size={20} /> Ver Resultados
                   </button>
                 </div>
               ) : (
                 <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Dashboard Metrics */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 flex items-center gap-4">
+                      <div className="bg-blue-600 p-3 rounded-xl text-white"><TrendingUp size={24} /></div>
+                      <div>
+                        <p className="text-xs text-blue-600 font-bold uppercase">Total Peças</p>
+                        <p className="text-2xl font-black text-blue-900">{chartData.reduce((acc, curr) => acc + curr.quantity, 0)}</p>
+                      </div>
+                    </div>
+                    <div className="bg-green-50 p-4 rounded-2xl border border-green-100 flex items-center gap-4">
+                      <div className="bg-green-600 p-3 rounded-xl text-white"><Clock size={24} /></div>
+                      <div>
+                        <p className="text-xs text-green-600 font-bold uppercase">Total Horas</p>
+                        <p className="text-2xl font-black text-green-900">{chartData.reduce((acc, curr) => acc + curr.prodHours, 0).toFixed(1)}h</p>
+                      </div>
+                    </div>
+                    <div className="bg-purple-50 p-4 rounded-2xl border border-purple-100 flex items-center gap-4">
+                      <div className="bg-purple-600 p-3 rounded-xl text-white"><UserIcon size={24} /></div>
+                      <div>
+                        <p className="text-xs text-purple-600 font-bold uppercase">Operador</p>
+                        <p className="text-xl font-black text-purple-900 truncate">{analysisOperator === 'ALL' ? 'Múltiplos' : analysisOperator}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     {/* Gráfico 1: Peças por Dia */}
                     <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
                       <h4 className="text-sm font-bold text-gray-400 uppercase mb-4 tracking-widest flex items-center gap-2"><TrendingUp size={16}/> Peças Produzidas / Dia</h4>
@@ -467,7 +470,7 @@ const App: React.FC = () => {
                             <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fontSize: 10}} />
                             <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10}} />
                             <Tooltip contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
-                            <Legend iconType="circle" />
+                            <Legend iconType="circle" verticalAlign="top" height={36} />
                             <Bar dataKey="prodHours" name="Horas Reais" fill="#10b981" radius={[4, 4, 0, 0]} />
                             <Line type="monotone" dataKey="meta" name="Disponível (Meta)" stroke="#ef4444" strokeWidth={2} dot={{r: 4, fill: "#ef4444"}} />
                           </ComposedChart>
@@ -475,23 +478,7 @@ const App: React.FC = () => {
                       </div>
                     </div>
                   </div>
-
-                  {/* IA Report */}
-                  <div className="bg-white rounded-3xl border border-orange-100 overflow-hidden shadow-sm">
-                    <div className="bg-orange-500 p-4 text-white font-bold flex items-center gap-2"><Sparkles size={18} /> Relatório Industrial Gemini</div>
-                    <div className="p-8">
-                      {isAnalyzing ? (
-                        <div className="flex flex-col items-center justify-center py-10 space-y-4">
-                          <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-                          <p className="text-gray-500 text-sm font-medium animate-pulse">Gerando insights estratégicos...</p>
-                        </div>
-                      ) : (
-                        <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap leading-relaxed">
-                          {analysis}
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                  
                   <button onClick={() => setShowAnalysisResult(false)} className="w-full py-4 text-gray-400 text-sm font-bold hover:text-blue-600 transition-colors">Voltar para Filtros</button>
                 </div>
               )}
@@ -569,7 +556,6 @@ const App: React.FC = () => {
             </div>
           )}
 
-          {/* ... Passo 1 ao 5 ... */}
           {step === AppStep.IDENTIFICATION && (
             <div className="space-y-6">
               <h2 className="text-lg font-bold text-gray-800">Passo 1: Identificação</h2>
