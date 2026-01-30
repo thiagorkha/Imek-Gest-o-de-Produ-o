@@ -22,8 +22,8 @@ import {
 import * as XLSX from 'xlsx';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale/pt-BR';
-// Fix: Import GoogleGenAI according to latest SDK standards
-import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
+// Fix: Use standard import for @google/genai
+import { GoogleGenAI } from "@google/genai";
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -51,7 +51,7 @@ const App: React.FC = () => {
     observation: ''
   });
 
-  // ESTADO CRÍTICO: Marco temporal isolado para garantir integridade do startTime
+  // ESTADO CRÍTICO: Marco temporal isolado
   const [productionStartTime, setProductionStartTime] = useState<number | null>(null);
   const [productionEndTime, setProductionEndTime] = useState<number | null>(null);
   
@@ -59,7 +59,7 @@ const App: React.FC = () => {
   const [timerStartTime, setTimerStartTime] = useState<number | null>(null);
   const [timer, setTimer] = useState(0);
 
-  // Timer logic for visual feedback
+  // Timer logic
   useEffect(() => {
     let interval: any;
     if (timerStartTime) {
@@ -118,8 +118,9 @@ const App: React.FC = () => {
     setError('');
     const now = Date.now();
     
-    // Captura do marco inicial absoluto da atividade
+    // REDUNDÂNCIA: Salva no Estado e no SessionStorage para evitar perda em re-renders
     setProductionStartTime(now);
+    sessionStorage.setItem('imek_start_time', now.toString());
     
     setIsSetupMode(mode === 'setup');
     setTimerStartTime(now);
@@ -130,10 +131,7 @@ const App: React.FC = () => {
 
   const finishSetupAndStartProd = () => {
     const now = Date.now();
-    // Armazena quanto tempo durou o setup
     setProdData(prev => ({ ...prev, setupDurationSeconds: timer }));
-    
-    // Reinicia o cronômetro para a fase de produção, mas o productionStartTime inicial é preservado
     setTimerStartTime(now);
     setTimer(0);
     setIsSetupMode(false);
@@ -148,9 +146,17 @@ const App: React.FC = () => {
   };
 
   const saveRecord = async () => {
-    // Validação de segurança final - Se productionStartTime for nulo, algo deu errado no fluxo
-    if (!productionStartTime) {
-      setError('Erro crítico: Horário de início não capturado. Por favor, reinicie o processo.');
+    // Tenta recuperar do estado, se falhar, tenta do sessionStorage
+    let finalStartTime = productionStartTime;
+    if (!finalStartTime || finalStartTime === 0) {
+      const stored = sessionStorage.getItem('imek_start_time');
+      if (stored) finalStartTime = parseInt(stored);
+    }
+
+    // VALIDAÇÃO DE SEGURANÇA: Bloqueia se o timestamp for impossível (menor que 2024)
+    const MIN_VALID_TIMESTAMP = 1704067200000; // 01/01/2024
+    if (!finalStartTime || finalStartTime < MIN_VALID_TIMESTAMP) {
+      setError('Erro de Sincronização: O horário de início não foi capturado. Por favor, reinicie o apontamento.');
       return;
     }
 
@@ -161,7 +167,7 @@ const App: React.FC = () => {
         maquina: prodData.maquina || '',
         op: prodData.op || '',
         cp: prodData.cp || '',
-        startTime: productionStartTime, // Usa o estado blindado
+        startTime: finalStartTime, 
         endTime: productionEndTime || Date.now(),
         durationSeconds: prodData.durationSeconds || 0,
         setupDurationSeconds: prodData.setupDurationSeconds || 0,
@@ -170,6 +176,9 @@ const App: React.FC = () => {
         timestamp: Date.now()
       };
       await firebaseService.saveRecord(finalRecord);
+      
+      // Limpa redundância após sucesso
+      sessionStorage.removeItem('imek_start_time');
       setStep(AppStep.COMPLETED);
     } catch (err) {
       setError('Erro ao salvar registro no banco de dados.');
@@ -199,7 +208,6 @@ const App: React.FC = () => {
     }
   };
 
-  // Refined: Implementation of Gemini analysis adhering to high-standard guidelines
   const generateAnalysis = async () => {
     setIsAnalyzing(true);
     setError('');
@@ -217,18 +225,19 @@ const App: React.FC = () => {
         return;
       }
 
-      // Fix: Create instance right before usage and use systemInstruction for better guidance
+      // Fix: Always use new instance with named apiKey right before the call.
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const response: GenerateContentResponse = await ai.models.generateContent({
+      // Fix: Call generateContent directly on ai.models and use correct model name.
+      const response = await ai.models.generateContent({
         model: 'gemini-3-pro-preview',
-        contents: JSON.stringify(currentRecords.slice(0, 50)),
+        contents: `Analise estes dados de produção industrial (JSON) e gere insights estratégicos: ${JSON.stringify(currentRecords.slice(0, 50))}`,
         config: { 
-          systemInstruction: "Você é um consultor sênior de eficiência industrial da IMEK. Sua tarefa é analisar os dados de produção fornecidos e gerar um relatório executivo em Markdown. Identifique padrões de atraso, performance por máquina e sugira otimizações.",
+          systemInstruction: "Você é um consultor sênior de eficiência industrial da IMEK. Analise os dados e gere um relatório executivo em Markdown com foco em performance e setup.",
           temperature: 0.7 
         }
       });
 
-      // Fix: Access response text via the .text property (getter)
+      // Fix: Use the .text property directly, not as a method.
       if (response.text) {
         setAnalysis(response.text.trim());
       } else {
@@ -541,7 +550,7 @@ const App: React.FC = () => {
             <div className="text-center py-6 space-y-6">
               <div className="bg-green-100 p-6 rounded-full inline-block text-green-600 animate-bounce"><CheckCircle2 size={60} /></div>
               <h2 className="text-3xl font-extrabold text-gray-800">Sucesso!</h2>
-              <button onClick={() => { setProdData({ maquina: prodData.maquina, operador: user?.username }); setProductionStartTime(null); setProductionEndTime(null); setStep(user?.role === UserRole.ADMIN ? AppStep.ADMIN_MENU : AppStep.IDENTIFICATION); }} className="w-full bg-blue-600 text-white font-bold py-4 rounded-2xl">Novo Apontamento</button>
+              <button onClick={() => { setProdData({ maquina: prodData.maquina, operador: user?.username }); setProductionStartTime(null); setProductionEndTime(null); sessionStorage.removeItem('imek_start_time'); setStep(user?.role === UserRole.ADMIN ? AppStep.ADMIN_MENU : AppStep.IDENTIFICATION); }} className="w-full bg-blue-600 text-white font-bold py-4 rounded-2xl">Novo Apontamento</button>
             </div>
           )}
         </div>
