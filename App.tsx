@@ -22,14 +22,12 @@ import {
   TrendingUp,
   Clock,
   User as UserIcon,
-  CloudCheck
+  Cloud
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import format from 'date-fns/format';
-import startOfDay from 'date-fns/startOfDay';
-import endOfDay from 'date-fns/endOfDay';
-import parseISO from 'date-fns/parseISO';
-import { ptBR } from 'date-fns/locale/pt-BR';
+// Fix: Use named imports for date-fns functions to avoid "not callable" errors in newer versions or environments
+import { format, startOfDay, endOfDay, parseISO } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 import { 
   BarChart, 
   Bar, 
@@ -61,6 +59,7 @@ const App: React.FC = () => {
   const [tableEndDate, setTableEndDate] = useState('');
 
   // States for Enhanced Analysis
+  // Fix: Call format using the named import reference
   const [analysisOperator, setAnalysisOperator] = useState('ALL');
   const [analysisStartDate, setAnalysisStartDate] = useState(format(new Date(new Date().setDate(new Date().getDate() - 7)), 'yyyy-MM-dd'));
   const [analysisEndDate, setAnalysisEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
@@ -124,7 +123,6 @@ const App: React.FC = () => {
     let interval: any;
     if (timerStartTime) {
       interval = setInterval(() => {
-        // Usamos o Date.now() menos o timerStartTime do estado para manter precisão
         setTimer(Math.floor((Date.now() - timerStartTime) / 1000));
       }, 1000);
     }
@@ -172,8 +170,8 @@ const App: React.FC = () => {
   };
 
   const startProduction = async (mode: 'setup' | 'direct') => {
-    if (!prodData.op || !prodData.cp) {
-      setError('Preencha OP e CP antes de iniciar.');
+    if (!prodData.maquina || !prodData.op || !prodData.cp) {
+      setError('Preencha todos os campos antes de iniciar.');
       return;
     }
     setError('');
@@ -183,7 +181,6 @@ const App: React.FC = () => {
     setTimerStartTime(now);
     setTimer(0);
 
-    // Persistir sessão no Firebase
     if (user) {
       const session: ActiveSession = {
         maquina: prodData.maquina || '',
@@ -208,7 +205,6 @@ const App: React.FC = () => {
     setTimer(0);
     setIsSetupMode(false);
 
-    // Atualizar persistência no Firebase
     if (user) {
       const session: ActiveSession = {
         maquina: prodData.maquina || '',
@@ -233,8 +229,8 @@ const App: React.FC = () => {
 
   const saveRecord = async () => {
     let finalStartTime = productionStartTime;
-    
     const MIN_VALID_TIMESTAMP = 1704067200000;
+    
     if (!finalStartTime || finalStartTime < MIN_VALID_TIMESTAMP) {
       setError('Erro de Sincronização. Reinicie o apontamento.');
       return;
@@ -257,7 +253,6 @@ const App: React.FC = () => {
       };
       await firebaseService.saveRecord(finalRecord);
       
-      // Limpar sessão ativa após sucesso
       if (user) {
         await firebaseService.deleteActiveSession(user.id);
       }
@@ -291,8 +286,6 @@ const App: React.FC = () => {
     }
   };
 
-  // --- ANALYSIS LOGIC ---
-
   const operatorsList = useMemo(() => {
     const ops = new Set(records.map(r => r.operador));
     return ['ALL', ...Array.from(ops)];
@@ -303,6 +296,7 @@ const App: React.FC = () => {
     if (analysisOperator !== 'ALL') {
       r = r.filter(item => item.operador === analysisOperator);
     }
+    // Fix: Call startOfDay, parseISO and endOfDay using the named import references
     const start = analysisStartDate ? startOfDay(parseISO(analysisStartDate)).getTime() : 0;
     const end = analysisEndDate ? endOfDay(parseISO(analysisEndDate)).getTime() : Infinity;
     return r.filter(item => item.timestamp >= start && item.timestamp <= end);
@@ -312,6 +306,7 @@ const App: React.FC = () => {
     const dailyData: Record<string, { date: string, quantity: number, prodHours: number, meta: number }> = {};
     
     filteredAnalysisRecords.forEach(record => {
+      // Fix: Call format using the named import reference
       const dateKey = format(record.timestamp, 'dd/MM');
       if (!dailyData[dateKey]) {
         dailyData[dateKey] = { date: dateKey, quantity: 0, prodHours: 0, meta: availableHoursPerDay };
@@ -323,15 +318,8 @@ const App: React.FC = () => {
     return Object.values(dailyData).sort((a, b) => a.date.localeCompare(b.date));
   }, [filteredAnalysisRecords, availableHoursPerDay]);
 
-  const processAnalysis = () => {
-    setError('');
-    setShowAnalysisResult(true);
-  };
-
-  // --- TABLE FILTERING ---
   const filteredAndSortedRecords = useMemo(() => {
     let result = [...records];
-    
     if (filterText) {
       const lowFilter = filterText.toLowerCase();
       result = result.filter(r => 
@@ -341,18 +329,18 @@ const App: React.FC = () => {
         r.cp.toLowerCase().includes(lowFilter)
       );
     }
-
+    // Fix: Call startOfDay, parseISO and endOfDay using the named import references
     if (tableStartDate || tableEndDate) {
       const start = tableStartDate ? startOfDay(parseISO(tableStartDate)).getTime() : 0;
       const end = tableEndDate ? endOfDay(parseISO(tableEndDate)).getTime() : Infinity;
       result = result.filter(r => r.timestamp >= start && r.timestamp <= end);
     }
-
     result.sort((a, b) => sortOrder === 'desc' ? b.timestamp - a.timestamp : a.timestamp - b.timestamp);
     return result;
   }, [records, filterText, sortOrder, tableStartDate, tableEndDate]);
 
   const exportToExcel = () => {
+    // Fix: Call format using the named import reference
     const ws = XLSX.utils.json_to_sheet(filteredAndSortedRecords.map(r => ({
       'Data': format(r.timestamp, 'dd/MM/yyyy', { locale: ptBR }),
       'Hora Início': format(r.startTime, 'HH:mm:ss', { locale: ptBR }),
@@ -368,6 +356,7 @@ const App: React.FC = () => {
     })));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Produção");
+    // Fix: Call format using the named import reference
     XLSX.writeFile(wb, `IMEK_Relatorio_${format(new Date(), 'yyyyMMdd_HHmm')}.xlsx`);
   };
 
@@ -479,13 +468,12 @@ const App: React.FC = () => {
                       <input type="date" value={analysisEndDate} onChange={e => setAnalysisEndDate(e.target.value)} className="w-full p-2.5 rounded-xl border border-gray-300 bg-white text-sm focus:ring-2 focus:ring-blue-500" />
                     </div>
                   </div>
-                  <button onClick={processAnalysis} className="w-full bg-blue-600 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-blue-700 flex items-center justify-center gap-2">
+                  <button onClick={() => setShowAnalysisResult(true)} className="w-full bg-blue-600 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-blue-700 flex items-center justify-center gap-2">
                     <TrendingUp size={20} /> Ver Resultados
                   </button>
                 </div>
               ) : (
                 <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                  {/* Dashboard Metrics */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 flex items-center gap-4">
                       <div className="bg-blue-600 p-3 rounded-xl text-white"><TrendingUp size={24} /></div>
@@ -511,7 +499,6 @@ const App: React.FC = () => {
                   </div>
 
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* Gráfico 1: Peças por Dia */}
                     <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
                       <h4 className="text-sm font-bold text-gray-400 uppercase mb-4 tracking-widest flex items-center gap-2"><TrendingUp size={16}/> Peças Produzidas / Dia</h4>
                       <div className="h-64 w-full">
@@ -526,8 +513,6 @@ const App: React.FC = () => {
                         </ResponsiveContainer>
                       </div>
                     </div>
-
-                    {/* Gráfico 2: Horas vs Meta */}
                     <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
                       <h4 className="text-sm font-bold text-gray-400 uppercase mb-4 tracking-widest flex items-center gap-2"><Clock size={16}/> Horas Reais vs Disponíveis</h4>
                       <div className="h-64 w-full">
@@ -545,7 +530,6 @@ const App: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                  
                   <button onClick={() => setShowAnalysisResult(false)} className="w-full py-4 text-gray-400 text-sm font-bold hover:text-blue-600 transition-colors">Voltar para Filtros</button>
                 </div>
               )}
@@ -561,7 +545,6 @@ const App: React.FC = () => {
                  </div>
                  <button onClick={exportToExcel} className="bg-green-600 text-white px-5 py-2.5 rounded-xl flex items-center gap-2 text-sm font-bold shadow-lg hover:bg-green-700 transition-colors"><Download size={16} /> Exportar Excel</button>
                </div>
-
                <div className="bg-gray-50 p-5 rounded-3xl border border-gray-200 space-y-4">
                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="relative">
@@ -588,7 +571,6 @@ const App: React.FC = () => {
                     )}
                  </div>
                </div>
-
                <div className="overflow-x-auto rounded-3xl border border-gray-200">
                  <table className="w-full text-left text-sm">
                    <thead className="bg-gray-100 text-gray-500 font-bold uppercase text-[10px] tracking-wider border-b border-gray-200">
@@ -656,7 +638,7 @@ const App: React.FC = () => {
             <div className="space-y-6 text-center">
               <div className="flex justify-center mb-2">
                 <div className="flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-600 rounded-full text-[10px] font-bold border border-blue-100">
-                  <CloudCheck size={12} /> SESSÃO SINCRONIZADA
+                  <Cloud size={12} /> SESSÃO SINCRONIZADA
                 </div>
               </div>
               <h2 className="text-xl font-bold text-gray-800">{isSetupMode ? 'Setup em Andamento' : 'Produção em Andamento'}</h2>
