@@ -1,6 +1,8 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { AppStep, User, UserRole, ProductionRecord, ProductionPause } from './types';
 import { firebaseService, ActiveSession } from './services/firebaseService';
+import { Html5Qrcode } from 'html5-qrcode';
 import { 
   ClipboardCheck, 
   LogOut, 
@@ -26,7 +28,9 @@ import {
   Target,
   Pause,
   AlertCircle,
-  PlayCircle
+  PlayCircle,
+  ScanLine,
+  X
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { format, startOfDay, endOfDay, parseISO, subDays, isSameDay } from 'date-fns';
@@ -93,6 +97,9 @@ const App: React.FC = () => {
   const [pauseReason, setPauseReason] = useState('');
   const [pauseStartTime, setPauseStartTime] = useState<number | null>(null);
   
+  // Estados de Código de Barras
+  const [isScanning, setIsScanning] = useState(false);
+
   // LOGICA CRITICA: PhasePauseMs para o cronômetro visual, TotalPauseMs para o registro final
   const [phasePauseMs, setPhasePauseMs] = useState(0); 
   const [totalPauseMs, setTotalPauseMs] = useState(0);
@@ -107,6 +114,55 @@ const App: React.FC = () => {
       case 6: return 4; 
       default: return 0; 
     }
+  };
+
+  // Scanner Component
+  const ScannerOverlay = () => {
+    useEffect(() => {
+      const html5QrCode = new Html5Qrcode("scanner-reader");
+      const qrCodeSuccessCallback = (decodedText: string) => {
+        setProdData(prev => ({ ...prev, op: decodedText }));
+        setIsScanning(false);
+        html5QrCode.stop().catch(err => console.error("Error stopping scanner", err));
+      };
+      
+      const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+      
+      html5QrCode.start(
+        { facingMode: "environment" }, 
+        config, 
+        qrCodeSuccessCallback,
+        undefined
+      ).catch(err => {
+        console.error("Error starting scanner", err);
+        setError("Não foi possível acessar a câmera.");
+        setIsScanning(false);
+      });
+
+      return () => {
+        if (html5QrCode.isScanning) {
+          html5QrCode.stop().catch(err => console.error("Error on unmount", err));
+        }
+      };
+    }, []);
+
+    return (
+      <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center animate-in fade-in duration-300">
+        <div className="w-full max-w-sm px-4 flex flex-col items-center">
+          <div className="w-full aspect-square bg-gray-900 rounded-3xl border-4 border-blue-500 overflow-hidden relative" id="scanner-reader">
+            {/* Visual scan guide */}
+            <div className="absolute inset-0 pointer-events-none border-2 border-white/20 m-12 rounded-xl"></div>
+          </div>
+          <p className="mt-6 text-white text-lg font-bold text-center">Posicione o código de barras no centro da tela</p>
+          <button 
+            onClick={() => setIsScanning(false)}
+            className="mt-12 bg-white/10 hover:bg-white/20 text-white px-8 py-4 rounded-2xl flex items-center gap-2 font-bold backdrop-blur-md transition-all"
+          >
+            <X size={20} /> Cancelar Leitura
+          </button>
+        </div>
+      </div>
+    );
   };
 
   // Recuperar sessão ativa ao carregar usuário
@@ -430,11 +486,12 @@ const App: React.FC = () => {
     const todayPercent = goalToday > 0 ? (todayHours / goalToday) * 100 : 0;
     const yesterdayPercent = goalYesterday > 0 ? (yesterdayHours / goalYesterday) * 100 : 0;
 
+    // FIX: Ensure returning numbers for consistency to avoid string|number TS errors later
     return {
       todayPercent: Math.round(todayPercent),
       yesterdayPercent: Math.round(yesterdayPercent),
-      todayHours: todayHours.toFixed(1),
-      yesterdayHours: yesterdayHours.toFixed(1),
+      todayHours: parseFloat(todayHours.toFixed(1)),
+      yesterdayHours: parseFloat(yesterdayHours.toFixed(1)),
       todayRecords,
       goalToday
     };
@@ -442,7 +499,8 @@ const App: React.FC = () => {
 
   const dailyChartData = [
     { name: 'Meta', horas: dailyStats.goalToday, fill: '#e2e8f0' },
-    { name: 'Realizado', horas: parseFloat(dailyStats.todayHours), fill: '#3b82f6' }
+    // FIX: dailyStats.todayHours is now guaranteed to be a number
+    { name: 'Realizado', horas: dailyStats.todayHours, fill: '#3b82f6' }
   ];
 
   const operatorsList = useMemo(() => {
@@ -455,7 +513,6 @@ const App: React.FC = () => {
     if (analysisOperator !== 'ALL') {
       r = r.filter(item => item.operador === analysisOperator);
     }
-    // Fix: Removed redundant String() conversion to resolve TypeScript overload matching errors
     const start = analysisStartDate ? startOfDay(parseISO(analysisStartDate)).getTime() : 0;
     const end = analysisEndDate ? endOfDay(parseISO(analysisEndDate)).getTime() : Infinity;
     return r.filter(item => item.timestamp >= start && item.timestamp <= end);
@@ -486,7 +543,6 @@ const App: React.FC = () => {
       );
     }
     if (tableStartDate || tableEndDate) {
-      // Fix: Removed redundant String() conversion to resolve TypeScript overload matching errors
       const start = tableStartDate ? startOfDay(parseISO(tableStartDate)).getTime() : 0;
       const end = tableEndDate ? endOfDay(parseISO(tableEndDate)).getTime() : Infinity;
       result = result.filter(r => r.timestamp >= start && r.timestamp <= end);
@@ -518,6 +574,8 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
+      {isScanning && <ScannerOverlay />}
+      
       <div className={`w-full ${[AppStep.SAVED_RECORDS, AppStep.ANALYSIS, AppStep.DAILY_VIEW].includes(step) ? 'max-w-6xl' : 'max-w-md'} bg-white rounded-3xl shadow-xl overflow-hidden border border-gray-100 transition-all duration-300`}>
         
         <div className="bg-white p-6 flex flex-col items-center border-b border-gray-100">
@@ -649,7 +707,7 @@ const App: React.FC = () => {
                  <div className="bg-indigo-600 p-3 rounded-xl text-white shadow-md"><LayoutDashboard size={24} /></div>
                  <div><span className="block font-bold text-indigo-900">Gestão e Dashboards</span><span className="text-xs text-indigo-700">Análise e Histórico</span></div>
                </button>
-               <button onClick={() => {setUser(null); setStep(AppStep.LOGIN)}} className="w-full mt-4 flex items-center justify-center gap-2 text-gray-500 font-bold hover:text-red-500 transition-colors"><LogOut size={16} /> Sair</button>
+               <button onClick={() => {setUser(null); setStep(AppStep.LOGIN)}} className="w-full mt-4 flex items-center justify-center gap-2 text-gray-400 font-bold hover:text-red-500 transition-colors"><LogOut size={16} /> Sair</button>
             </div>
           )}
 
@@ -689,7 +747,8 @@ const App: React.FC = () => {
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Horas Disponíveis/Dia</label>
-                      <input type="number" value={availableHoursPerDay} onChange={e => setAvailableHoursPerDay(parseFloat(e.target.value))} className="w-full p-2.5 rounded-xl border border-gray-300 bg-white text-sm focus:ring-2 focus:ring-blue-500" />
+                      {/* FIX: Use Number() instead of parseFloat for consistent behavior and ensuring it handles empty strings gracefully as 0 */}
+                      <input type="number" value={availableHoursPerDay} onChange={e => setAvailableHoursPerDay(Number(e.target.value))} className="w-full p-2.5 rounded-xl border border-gray-300 bg-white text-sm focus:ring-2 focus:ring-blue-500" />
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Data Inicial</label>
@@ -853,9 +912,38 @@ const App: React.FC = () => {
             <div className="space-y-6">
               <h2 className="text-lg font-bold text-gray-800">Passo 2: Detalhes</h2>
               <div className="space-y-4">
-                <input type="text" value={prodData.op} onChange={e => setProdData(prev => ({ ...prev, op: e.target.value }))} className="w-full p-3 rounded-xl border border-gray-200 bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" placeholder="Número da OP" />
-                <input type="text" value={prodData.cp} onChange={e => setProdData(prev => ({ ...prev, cp: e.target.value }))} className="w-full p-3 rounded-xl border border-gray-200 bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" placeholder="Código do Produto (CP)" />
+                <div className="space-y-1">
+                  <label className="block text-sm font-semibold text-gray-600">Número da OP</label>
+                  <div className="flex gap-2">
+                    <input 
+                      type="text" 
+                      value={prodData.op} 
+                      onChange={e => setProdData(prev => ({ ...prev, op: e.target.value }))} 
+                      className="flex-1 p-3 rounded-xl border border-gray-200 bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500 transition-all" 
+                      placeholder="Número da OP" 
+                    />
+                    <button 
+                      onClick={() => setIsScanning(true)}
+                      className="p-3 bg-blue-100 text-blue-600 rounded-xl hover:bg-blue-200 transition-colors shadow-sm"
+                      title="Escanear Código de Barras"
+                    >
+                      <ScanLine size={24} />
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="space-y-1">
+                  <label className="block text-sm font-semibold text-gray-600">Código do Produto (CP)</label>
+                  <input 
+                    type="text" 
+                    value={prodData.cp} 
+                    onChange={e => setProdData(prev => ({ ...prev, cp: e.target.value }))} 
+                    className="w-full p-3 rounded-xl border border-gray-200 bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500 transition-all" 
+                    placeholder="Código do Produto (CP)" 
+                  />
+                </div>
               </div>
+              
               <div className="flex gap-3">
                 <button onClick={() => startProduction('setup')} className="flex-1 bg-green-600 text-white font-bold py-3 rounded-xl text-sm shadow-md hover:bg-green-700 transition-colors">Setup</button>
                 <button onClick={() => startProduction('direct')} className="flex-1 bg-blue-600 text-white font-bold py-3 rounded-xl text-sm shadow-md hover:bg-blue-700 transition-colors">Iniciar</button>
@@ -954,7 +1042,8 @@ const App: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-widest">Quantidade Produzida</label>
-                <input type="number" value={prodData.quantity} onChange={e => setProdData(prev => ({ ...prev, quantity: parseInt(e.target.value) || 0 }))} className="w-full p-4 rounded-xl border border-gray-200 bg-gray-50 text-xl font-black text-blue-600 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="0" />
+                {/* FIX: Ensure value is not undefined for controlled component and use Number() for conversion */}
+                <input type="number" value={prodData.quantity ?? 0} onChange={e => setProdData(prev => ({ ...prev, quantity: Number(e.target.value) || 0 }))} className="w-full p-4 rounded-xl border border-gray-200 bg-gray-50 text-xl font-black text-blue-600 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="0" />
               </div>
               <div>
                 <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-widest">Observações Extras</label>
