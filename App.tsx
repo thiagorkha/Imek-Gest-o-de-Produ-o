@@ -121,12 +121,23 @@ const App: React.FC = () => {
     useEffect(() => {
       const html5QrCode = new Html5Qrcode("scanner-reader");
       const qrCodeSuccessCallback = (decodedText: string) => {
+        // Vibração ao ler (se disponível)
+        if (navigator.vibrate) navigator.vibrate(100);
         setProdData(prev => ({ ...prev, op: decodedText }));
         setIsScanning(false);
         html5QrCode.stop().catch(err => console.error("Error stopping scanner", err));
       };
       
-      const config = { fps: 15, qrbox: { width: 280, height: 200 } };
+      // Configuração otimizada para velocidade e isolamento
+      const config = { 
+        fps: 20, 
+        // qrbox retangular para focar apenas no código de barras e ignorar textos acima/abaixo
+        qrbox: { width: 320, height: 160 },
+        experimentalFeatures: {
+          useBarCodeDetectorIfSupported: true
+        },
+        aspectRatio: 1.777778 // Sugestão de 16:9
+      };
       
       html5QrCode.start(
         { facingMode: "environment" }, 
@@ -147,21 +158,69 @@ const App: React.FC = () => {
     }, []);
 
     return (
-      <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center animate-in fade-in duration-300">
-        <div className="w-full max-w-md px-6 flex flex-col items-center">
-          <div className="w-full aspect-video bg-black rounded-3xl border-4 border-blue-500 overflow-hidden relative shadow-2xl" id="scanner-reader">
+      <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col items-center justify-center animate-in fade-in duration-300">
+        <style>{`
+          #scanner-reader video {
+            object-fit: cover !important;
+          }
+          .scan-line {
+            height: 2px;
+            background: #3b82f6;
+            width: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            box-shadow: 0 0 10px #3b82f6;
+            animation: scan 2s linear infinite;
+            z-index: 10;
+          }
+          @keyframes scan {
+            0% { top: 0%; }
+            50% { top: 100%; }
+            100% { top: 0%; }
+          }
+          /* Overlay para escurecer o que está fora da área de leitura */
+          .scanner-mask {
+            position: absolute;
+            inset: 0;
+            background: rgba(0,0,0,0.6);
+            pointer-events: none;
+            z-index: 5;
+            clip-path: polygon(0% 0%, 0% 100%, 100% 100%, 100% 0%, 0% 0%, 
+                        calc(50% - 160px) calc(50% - 80px), 
+                        calc(50% + 160px) calc(50% - 80px), 
+                        calc(50% + 160px) calc(50% + 80px), 
+                        calc(50% - 160px) calc(50% + 80px), 
+                        calc(50% - 160px) calc(50% - 80px));
+          }
+        `}</style>
+        
+        <div className="w-full h-full relative flex flex-col items-center justify-center">
+          <div className="w-full h-full absolute inset-0" id="scanner-reader"></div>
+          
+          {/* Máscara de foco */}
+          <div className="scanner-mask"></div>
+          
+          {/* Moldura de mira */}
+          <div className="z-10 w-[320px] h-[160px] border-2 border-blue-500 rounded-lg relative overflow-hidden pointer-events-none">
+            <div className="scan-line"></div>
+            {/* Cantoneiras */}
+            <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-blue-400"></div>
+            <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-blue-400"></div>
+            <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-blue-400"></div>
+            <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-blue-400"></div>
           </div>
-          <div className="mt-8 text-center space-y-2">
-            <p className="text-white text-xl font-extrabold flex items-center justify-center gap-2">
-              <ScanLine className="text-blue-400" /> Escaneando OP
-            </p>
-            <p className="text-gray-400 text-sm font-medium">Alinhe o código de barras dentro da área central</p>
+
+          <div className="z-20 mt-8 text-center px-6">
+            <p className="text-white text-lg font-bold">Aproxime apenas o Código de Barras</p>
+            <p className="text-gray-400 text-sm mt-1">Toque na tela se precisar focar</p>
           </div>
+
           <button 
             onClick={() => setIsScanning(false)}
-            className="mt-12 bg-white/10 hover:bg-white/20 text-white px-10 py-4 rounded-2xl flex items-center gap-2 font-bold backdrop-blur-md transition-all border border-white/10 active:scale-95"
+            className="z-20 mt-12 bg-white/10 hover:bg-white/20 text-white px-10 py-4 rounded-2xl flex items-center gap-2 font-bold backdrop-blur-md transition-all border border-white/10 active:scale-95"
           >
-            <X size={20} /> Fechar Câmera
+            <X size={20} /> Cancelar Leitura
           </button>
         </div>
       </div>
