@@ -30,12 +30,14 @@ import {
   AlertCircle,
   PlayCircle,
   ScanLine,
-  X,
-  BrainCircuit
+  X
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-// Consolidate date-fns imports to avoid module resolution errors in modern build environments
-import { format, isSameDay, endOfDay, startOfDay, parseISO, subDays } from 'date-fns';
+// Import date-fns functions specifically to avoid missing member errors in some build environments
+import { format, isSameDay, endOfDay } from 'date-fns';
+import { startOfDay } from 'date-fns/startOfDay';
+import { parseISO } from 'date-fns/parseISO';
+import { subDays } from 'date-fns/subDays';
 import { ptBR } from 'date-fns/locale/pt-BR';
 import { 
   BarChart, 
@@ -50,7 +52,6 @@ import {
   ComposedChart,
   Line
 } from 'recharts';
-import { GoogleGenAI } from "@google/genai";
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -59,9 +60,6 @@ const App: React.FC = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-
-  // AI Analysis State
-  const [aiInsights, setAiInsights] = useState<string | null>(null);
 
   // States for Admin Module
   const [records, setRecords] = useState<ProductionRecord[]>([]);
@@ -119,40 +117,6 @@ const App: React.FC = () => {
       case 5: return 8; 
       case 6: return 4; 
       default: return 0; 
-    }
-  };
-
-  // Function to generate AI Insights using Gemini 3 Pro
-  const generateAIInsights = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const analysisData = filteredAnalysisRecords.slice(0, 15).map(r => ({
-        operador: r.operador,
-        maquina: r.maquina,
-        op: r.op,
-        minutosProducao: Math.round((r.durationSeconds + r.setupDurationSeconds) / 60),
-        minutosPausa: Math.round(r.totalPauseSeconds / 60),
-        pausas: r.pauseReasons,
-        quantidade: r.quantity
-      }));
-
-      const prompt = `Analise os seguintes registros de produção da fábrica IMEK e forneça 3 insights acionáveis e diretos para melhorar a produtividade e reduzir tempos de setup ou pausas. Responda em Português do Brasil com Markdown conciso.
-      
-      Dados: ${JSON.stringify(analysisData)}`;
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-pro-preview',
-        contents: prompt,
-      });
-
-      setAiInsights(response.text || "Sem insights disponíveis no momento.");
-    } catch (err) {
-      console.error(err);
-      setError("Falha ao consultar IMEK AI. Verifique sua conexão ou tente novamente mais tarde.");
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -377,10 +341,9 @@ const App: React.FC = () => {
     if (!currentTimestamp) return;
 
     const session: ActiveSession = {
-      // Priorizamos valores passados por override para evitar closures obsoletas do prodData
-      maquina: overrideParams.maquina || prodData.maquina || '',
-      op: overrideParams.op || prodData.op || '',
-      cp: overrideParams.cp || prodData.cp || '',
+      maquina: prodData.maquina || '',
+      op: prodData.op || '',
+      cp: prodData.cp || '',
       startTime: productionStartTime || Date.now(),
       isSetupMode,
       setupDurationSeconds: prodData.setupDurationSeconds || 0,
@@ -411,11 +374,8 @@ const App: React.FC = () => {
     setTotalPauseMs(0);
     setPausesList([]);
 
-    // Passamos maquina, op e cp explicitamente para garantir persistência correta
+    // Forçamos a persistência passando o timestamp diretamente para evitar race condition de estado
     await persistSession({
-      maquina: prodData.maquina,
-      op: prodData.op,
-      cp: prodData.cp,
       startTime: now,
       isSetupMode: mode === 'setup',
       timestamp: now,
@@ -433,13 +393,7 @@ const App: React.FC = () => {
     setIsPaused(true);
     setPauseStartTime(now);
     setPauseReason('');
-    await persistSession({ 
-      isPaused: true, 
-      pauseStartTime: now,
-      maquina: prodData.maquina,
-      op: prodData.op,
-      cp: prodData.cp 
-    });
+    await persistSession({ isPaused: true, pauseStartTime: now });
   };
 
   const handleResume = async () => {
@@ -473,10 +427,7 @@ const App: React.FC = () => {
       pauseStartTime: null, 
       phasePauseMs: newPhasePauseMs,
       totalPauseMs: newTotalPauseMs,
-      pauses: newList,
-      maquina: prodData.maquina,
-      op: prodData.op,
-      cp: prodData.cp
+      pauses: newList
     });
   };
 
@@ -490,6 +441,7 @@ const App: React.FC = () => {
     }));
 
     // RESET PARA PRODUÇÃO: O cronômetro agora começa do zero real
+    // PhasePauseMs é zerado para não interferir na contagem da produção
     setTimerStartTime(now);
     setTimer(0);
     setPhasePauseMs(0); 
@@ -499,11 +451,8 @@ const App: React.FC = () => {
       isSetupMode: false,
       setupDurationSeconds: setupDuration,
       timestamp: now,
-      phasePauseMs: 0, 
-      totalPauseMs: totalPauseMs,
-      maquina: prodData.maquina,
-      op: prodData.op,
-      cp: prodData.cp
+      phasePauseMs: 0, // Resetamos o acumulador visual para a nova fase
+      totalPauseMs: totalPauseMs // Mantemos o acumulador global intocado
     });
   };
 
@@ -857,7 +806,7 @@ const App: React.FC = () => {
               </div>
 
               {!showAnalysisResult ? (
-                <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm space-y-5 text-left">
+                <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm space-y-5">
                   <h3 className="text-lg font-bold text-gray-700 flex items-center gap-2">Configuração da Análise</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
@@ -868,7 +817,7 @@ const App: React.FC = () => {
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Horas Disponíveis/Dia</label>
-                      <input type="number" value={availableHoursPerDay} onChange={e => setAnalysisOperator(String(e.target.value))} className="w-full p-2.5 rounded-xl border border-gray-300 bg-white text-sm focus:ring-2 focus:ring-blue-500" />
+                      <input type="number" value={availableHoursPerDay} onChange={e => setAvailableHoursPerDay(Number(e.target.value))} className="w-full p-2.5 rounded-xl border border-gray-300 bg-white text-sm focus:ring-2 focus:ring-blue-500" />
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Data Inicial</label>
@@ -886,21 +835,21 @@ const App: React.FC = () => {
               ) : (
                 <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 flex items-center gap-4 text-left">
+                    <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 flex items-center gap-4">
                       <div className="bg-blue-600 p-3 rounded-xl text-white"><TrendingUp size={24} /></div>
                       <div>
                         <p className="text-xs text-blue-600 font-bold uppercase">Total Peças</p>
                         <p className="text-2xl font-black text-blue-900">{chartData.reduce((acc, curr) => acc + curr.quantity, 0)}</p>
                       </div>
                     </div>
-                    <div className="bg-green-50 p-4 rounded-2xl border border-green-100 flex items-center gap-4 text-left">
+                    <div className="bg-green-50 p-4 rounded-2xl border border-green-100 flex items-center gap-4">
                       <div className="bg-green-600 p-3 rounded-xl text-white"><Clock size={24} /></div>
                       <div>
                         <p className="text-xs text-green-600 font-bold uppercase">Total Horas</p>
                         <p className="text-2xl font-black text-green-900">{chartData.reduce((acc, curr) => acc + curr.prodHours, 0).toFixed(1)}h</p>
                       </div>
                     </div>
-                    <div className="bg-purple-50 p-4 rounded-2xl border border-purple-100 flex items-center gap-4 text-left">
+                    <div className="bg-purple-50 p-4 rounded-2xl border border-purple-100 flex items-center gap-4">
                       <div className="bg-purple-600 p-3 rounded-xl text-white"><UserIcon size={24} /></div>
                       <div>
                         <p className="text-xs text-purple-600 font-bold uppercase">Operador</p>
@@ -910,7 +859,7 @@ const App: React.FC = () => {
                   </div>
 
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm text-left">
+                    <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
                       <h4 className="text-sm font-bold text-gray-400 uppercase mb-4 tracking-widest flex items-center gap-2"><TrendingUp size={16}/> Peças Produzidas / Dia</h4>
                       <div className="h-64 w-full">
                         <ResponsiveContainer width="100%" height="100%">
@@ -924,7 +873,7 @@ const App: React.FC = () => {
                         </ResponsiveContainer>
                       </div>
                     </div>
-                    <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm text-left">
+                    <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
                       <h4 className="text-sm font-bold text-gray-400 uppercase mb-4 tracking-widest flex items-center gap-2"><Clock size={16}/> Horas Reais vs Disponíveis</h4>
                       <div className="h-64 w-full">
                         <ResponsiveContainer width="100%" height="100%">
@@ -941,47 +890,6 @@ const App: React.FC = () => {
                       </div>
                     </div>
                   </div>
-
-                  {/* Gemini AI Powered Dashboard */}
-                  <div className="bg-gradient-to-r from-blue-600 to-indigo-700 p-8 rounded-[2rem] text-white shadow-2xl relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                      <BrainCircuit size={120} />
-                    </div>
-                    <div className="relative z-10 text-left">
-                      <div className="flex items-center gap-3 mb-4">
-                        <div className="bg-white/20 p-2 rounded-xl backdrop-blur-md">
-                          <Sparkles size={24} className="text-blue-100" />
-                        </div>
-                        <h3 className="text-xl font-bold">IMEK AI Insights</h3>
-                      </div>
-                      <p className="text-blue-100 text-sm mb-6 max-w-lg">
-                        Deixe a nossa inteligência analisar seus gargalos de produção e sugerir melhorias de processos.
-                      </p>
-                      
-                      {!aiInsights ? (
-                        <button 
-                          onClick={generateAIInsights}
-                          disabled={loading}
-                          className="bg-white text-blue-700 font-bold px-8 py-4 rounded-2xl shadow-lg hover:bg-blue-50 transition-all flex items-center gap-2 active:scale-95 disabled:opacity-50"
-                        >
-                          {loading ? 'Analisando...' : <><BrainCircuit size={20} /> Gerar Análise de Performance</>}
-                        </button>
-                      ) : (
-                        <div className="space-y-4 animate-in fade-in slide-in-from-top-4 duration-500">
-                          <div className="bg-white/10 backdrop-blur-md p-6 rounded-2xl border border-white/20 prose prose-invert prose-sm max-w-none text-blue-50 leading-relaxed">
-                             {aiInsights}
-                          </div>
-                          <button 
-                            onClick={() => setAiInsights(null)}
-                            className="text-white/60 hover:text-white text-xs font-bold underline transition-colors"
-                          >
-                            Limpar Insights
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
                   <button onClick={() => setShowAnalysisResult(false)} className="w-full py-4 text-gray-400 text-sm font-bold hover:text-blue-600 transition-colors">Voltar para Filtros</button>
                 </div>
               )}
@@ -991,13 +899,13 @@ const App: React.FC = () => {
           {step === AppStep.SAVED_RECORDS && (
             <div className="space-y-6">
                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-2">
-                 <div className="flex items-center gap-2 text-left">
+                 <div className="flex items-center gap-2">
                     <button onClick={() => setStep(AppStep.GESTÃO_PRODUCAO)} className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors"><ArrowLeft size={16} /></button>
                     <h2 className="text-xl font-bold text-gray-800">Apontamentos Salvos</h2>
                  </div>
                  <button onClick={exportToExcel} className="bg-green-600 text-white px-5 py-2.5 rounded-xl flex items-center gap-2 text-sm font-bold shadow-lg hover:bg-green-700 transition-colors"><Download size={16} /> Exportar Excel</button>
                </div>
-               <div className="bg-gray-50 p-5 rounded-3xl border border-gray-200 shadow-sm space-y-4">
+               <div className="bg-gray-50 p-5 rounded-3xl border border-gray-200 space-y-4">
                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
@@ -1015,7 +923,7 @@ const App: React.FC = () => {
                     </div>
                  </div>
                </div>
-               <div className="overflow-x-auto rounded-3xl border border-gray-200 text-left">
+               <div className="overflow-x-auto rounded-3xl border border-gray-200">
                  <table className="w-full text-left text-sm">
                    <thead className="bg-gray-100 text-gray-500 font-bold uppercase text-[10px] tracking-wider border-b border-gray-200">
                      <tr><th className="px-6 py-5">Data/Hora</th><th className="px-6 py-5">Equipamento</th><th className="px-6 py-5">OP/CP</th><th className="px-6 py-5 text-center">Qtde</th><th className="px-6 py-5">Duração</th></tr>
@@ -1050,7 +958,7 @@ const App: React.FC = () => {
           )}
 
           {step === AppStep.IDENTIFICATION && (
-            <div className="space-y-6 text-left">
+            <div className="space-y-6">
               <h2 className="text-lg font-bold text-gray-800">Passo 1: Identificação</h2>
               <div className="space-y-4">
                 <div>
@@ -1070,7 +978,7 @@ const App: React.FC = () => {
           )}
 
           {step === AppStep.DETAILS && (
-            <div className="space-y-6 text-left">
+            <div className="space-y-6">
               <h2 className="text-lg font-bold text-gray-800">Passo 2: Detalhes</h2>
               <div className="space-y-4">
                 <div className="space-y-1">
@@ -1179,8 +1087,8 @@ const App: React.FC = () => {
           )}
 
           {step === AppStep.SUMMARY && (
-            <div className="space-y-6 text-left">
-              <h2 className="text-lg font-bold text-gray-800 text-center">Resumo do Apontamento</h2>
+            <div className="space-y-6">
+              <h2 className="text-lg font-bold text-gray-800">Resumo do Apontamento</h2>
               <div className="grid grid-cols-2 gap-3">
                  <div className="bg-blue-50 p-3 rounded-xl border border-blue-100">
                     <span className="text-[10px] text-blue-400 font-bold uppercase block">Tempo Líquido</span>
@@ -1192,7 +1100,7 @@ const App: React.FC = () => {
                  </div>
               </div>
               
-              <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 space-y-2 text-left">
+              <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 space-y-2">
                 <span className="text-[10px] text-gray-400 font-bold uppercase block">Motivos das Pausas</span>
                 <p className="text-sm text-gray-600 font-medium italic">
                   {prodData.pauses && prodData.pauses.length > 0 
