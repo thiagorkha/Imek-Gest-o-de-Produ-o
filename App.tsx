@@ -33,8 +33,12 @@ import {
   X
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { format, startOfDay, endOfDay, parseISO, subDays, isSameDay } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+// Import date-fns functions specifically to avoid missing member errors in some build environments
+import { format, isSameDay, endOfDay } from 'date-fns';
+import { startOfDay } from 'date-fns/startOfDay';
+import { parseISO } from 'date-fns/parseISO';
+import { subDays } from 'date-fns/subDays';
+import { ptBR } from 'date-fns/locale/pt-BR';
 import { 
   BarChart, 
   Bar, 
@@ -330,7 +334,12 @@ const App: React.FC = () => {
   };
 
   const persistSession = async (overrideParams: Partial<ActiveSession> = {}) => {
-    if (!user || !timerStartTime) return;
+    if (!user) return;
+    
+    // Fallback para o timestamp se não for passado via override (importante para o início da sessão)
+    const currentTimestamp = overrideParams.timestamp || timerStartTime;
+    if (!currentTimestamp) return;
+
     const session: ActiveSession = {
       maquina: prodData.maquina || '',
       op: prodData.op || '',
@@ -338,7 +347,7 @@ const App: React.FC = () => {
       startTime: productionStartTime || Date.now(),
       isSetupMode,
       setupDurationSeconds: prodData.setupDurationSeconds || 0,
-      timestamp: timerStartTime,
+      timestamp: currentTimestamp,
       isPaused,
       pauseStartTime,
       phasePauseMs,
@@ -365,6 +374,7 @@ const App: React.FC = () => {
     setTotalPauseMs(0);
     setPausesList([]);
 
+    // Forçamos a persistência passando o timestamp diretamente para evitar race condition de estado
     await persistSession({
       startTime: now,
       isSetupMode: mode === 'setup',
