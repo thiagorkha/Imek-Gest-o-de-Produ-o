@@ -27,7 +27,6 @@ import {
   Database
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-// Removed subDays and isWithinInterval as they were reported as missing or unused in the provided date-fns version
 import { format, isSameDay, endOfDay } from 'date-fns';
 import { GoogleGenAI } from "@google/genai";
 import { 
@@ -84,6 +83,7 @@ const App: React.FC = () => {
   const [records, setRecords] = useState<ProductionRecord[]>([]);
   const [tableStartDate, setTableStartDate] = useState(format(startOfDay(new Date()), 'yyyy-MM-01'));
   const [tableEndDate, setTableEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [recordsOperatorFilter, setRecordsOperatorFilter] = useState('ALL');
 
   // Estados de Análise
   const [analysisOperator, setAnalysisOperator] = useState('ALL');
@@ -99,6 +99,7 @@ const App: React.FC = () => {
   const [isSetupMode, setIsSetupMode] = useState(true);
   const [timerStartTime, setTimerStartTime] = useState<number | null>(null);
   const [timer, setTimer] = useState(0);
+  const [finalDuration, setFinalDuration] = useState<number | null>(null);
   const [isPaused, setIsPaused] = useState(false);
   const [pauseReason, setPauseReason] = useState('');
   const [pauseStartTime, setPauseStartTime] = useState<number | null>(null);
@@ -131,7 +132,7 @@ const App: React.FC = () => {
   // Sincronizar dados automaticamente ao mudar para telas de gestão
   useEffect(() => {
     if (user?.role === UserRole.ADMIN && [AppStep.GESTÃO_PRODUCAO, AppStep.ANALYSIS, AppStep.SAVED_RECORDS].includes(step)) {
-      fetchRecords(records.length === 0); // Só mostra loading se estiver vazio
+      fetchRecords(records.length === 0);
     }
   }, [step, user, fetchRecords, records.length]);
 
@@ -208,11 +209,11 @@ const App: React.FC = () => {
 
   useEffect(() => {
     let interval: any;
-    if (timerStartTime && !isPaused) {
+    if (timerStartTime && !isPaused && step === AppStep.TIMER) {
       interval = setInterval(() => setTimer(Math.max(0, Math.floor((Date.now() - timerStartTime - phasePauseMs) / 1000))), 1000);
     }
     return () => clearInterval(interval);
-  }, [timerStartTime, isPaused, phasePauseMs]);
+  }, [timerStartTime, isPaused, phasePauseMs, step]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault(); setLoading(true); setError('');
@@ -226,17 +227,27 @@ const App: React.FC = () => {
     } catch (err) { setError('Erro ao conectar.'); } finally { setLoading(false); }
   };
 
+  const handleLogout = () => {
+    setUser(null);
+    setStep(AppStep.LOGIN);
+    releaseWakeLock();
+  };
+
   const startProduction = async (mode: 'setup' | 'direct') => {
     if (!prodData.maquina || !prodData.op || !prodData.cp) { setError('Preencha os campos obrigatórios.'); return; }
     setLoading(true); const now = Date.now();
     try {
       await persistSession({ maquina: prodData.maquina, op: prodData.op, cp: prodData.cp, startTime: now, isSetupMode: mode === 'setup', timestamp: now, isPaused: false, phasePauseMs: 0, totalPauseMs: 0, pauses: [] });
-      setProductionStartTime(now); setIsSetupMode(mode === 'setup'); setTimerStartTime(now); setTimer(0); setIsPaused(false); setPhasePauseMs(0); setTotalPauseMs(0); setPausesList([]);
+      setProductionStartTime(now); setIsSetupMode(mode === 'setup'); setTimerStartTime(now); setTimer(0); setFinalDuration(null); setIsPaused(false); setPhasePauseMs(0); setTotalPauseMs(0); setPausesList([]);
       await requestWakeLock(); setStep(AppStep.TIMER);
     } catch (err) { setError("Erro ao iniciar sessão."); } finally { setLoading(false); }
   };
 
-  const finishProduction = () => { releaseWakeLock(); setStep(AppStep.SUMMARY); };
+  const finishProduction = () => { 
+    setFinalDuration(timer);
+    releaseWakeLock(); 
+    setStep(AppStep.SUMMARY); 
+  };
 
   const handlePause = async () => {
     const now = Date.now(); setIsPaused(true); setPauseStartTime(now); setPauseReason(''); releaseWakeLock();
@@ -247,9 +258,17 @@ const App: React.FC = () => {
     if (!pauseReason.trim()) { setError('Por favor, informe o motivo da pausa.'); return; }
     const now = Date.now(); const dur = pauseStartTime ? (now - pauseStartTime) : 0;
     const newPause = { reason: pauseReason.trim(), durationSeconds: Math.floor(dur / 1000), timestamp: now };
-    const newList = [...pausesList, newPause]; const newPhase = phasePauseMs + dur; const newTotal = totalPauseMs + dur;
-    setPhasePauseMs(newPhase); setTotalPauseMs(newTotal); setPausesList(newList); setIsPaused(false); setPauseStartTime(null); setPauseReason('');
-    await requestWakeLock(); await persistSession({ isPaused: false, pauseStartTime: null, phasePauseMs: newPhase, totalPauseMs: newTotal, pauses: newList });
+    const newList = [...pausesList, newPause]; 
+    const newPhase = phasePauseMs + dur; 
+    const newTotal = totalPauseMs + dur;
+    setPhasePauseMs(newPhase); 
+    setTotalPauseMs(newTotal); 
+    setPausesList(newList); 
+    setIsPaused(false); 
+    setPauseStartTime(null); 
+    setPauseReason('');
+    await requestWakeLock(); 
+    await persistSession({ isPaused: false, pauseStartTime: null, phasePauseMs: newPhase, totalPauseMs: newTotal, pauses: newList });
   };
 
   const saveRecord = async () => {
@@ -263,7 +282,7 @@ const App: React.FC = () => {
         cp: prodData.cp!, 
         startTime: productionStartTime!, 
         endTime: Date.now(), 
-        durationSeconds: timer, 
+        durationSeconds: finalDuration !== null ? finalDuration : timer, 
         setupDurationSeconds: prodData.setupDurationSeconds || 0, 
         totalPauseSeconds: Math.floor(totalPauseMs / 1000), 
         pauses: pausesList, 
@@ -291,8 +310,12 @@ const App: React.FC = () => {
   const filteredTableRecords = useMemo(() => {
     const start = startOfDay(parseISO(tableStartDate)).getTime();
     const end = endOfDay(parseISO(tableEndDate)).getTime();
-    return records.filter(r => r.timestamp >= start && r.timestamp <= end);
-  }, [records, tableStartDate, tableEndDate]);
+    return records.filter(r => {
+      const isDate = r.timestamp >= start && r.timestamp <= end;
+      const isOperator = recordsOperatorFilter === 'ALL' || r.operador === recordsOperatorFilter;
+      return isDate && isOperator;
+    });
+  }, [records, tableStartDate, tableEndDate, recordsOperatorFilter]);
 
   const uniqueOperators = useMemo(() => {
     const ops = new Set(records.map(r => r.operador));
@@ -336,7 +359,6 @@ const App: React.FC = () => {
     
     const now = new Date();
     const today = startOfDay(now);
-    // Fixed: subDays was missing from exports, replaced with native timestamp calculation for "yesterday"
     const yesterday = startOfDay(new Date(now.getTime() - 86400000));
 
     const userRecords = records.filter(r => r.operador === user.username);
@@ -464,7 +486,10 @@ const App: React.FC = () => {
 
           {step === AppStep.IDENTIFICATION && (
             <div className="space-y-6">
-              <h2 className="text-xl font-black text-gray-800 flex items-center gap-2"><LayoutDashboard className="text-blue-600" size={20} /> PASSO 1: EQUIPAMENTO</h2>
+              <div className="flex justify-between items-center">
+                <h2 className="text-xl font-black text-gray-800 flex items-center gap-2"><LayoutDashboard className="text-blue-600" size={20} /> PASSO 1: EQUIPAMENTO</h2>
+                <button onClick={handleLogout} className="p-3 bg-red-50 text-red-600 rounded-2xl hover:bg-red-100 transition-all"><LogOut size={18}/></button>
+              </div>
               <select value={prodData.maquina} onChange={e => setProdData(p => ({ ...p, maquina: e.target.value }))} className="w-full p-4 rounded-2xl border border-gray-100 bg-gray-50 font-black text-gray-700 appearance-none cursor-pointer">
                 <option value="">Selecione a Máquina...</option>
                 <option>Romi D1000</option><option>Veker Mvk 1050</option><option>Torno Cnc Cosmos</option><option>Torno Convencional</option><option>Torno Mascote</option><option>Fresadora Ferramenteira</option>
@@ -494,9 +519,12 @@ const App: React.FC = () => {
 
           {step === AppStep.TIMER && (
             <div className="space-y-6 text-center">
-              <div className={`flex items-center gap-2 px-4 py-2 rounded-full text-[10px] font-black border mx-auto w-fit ${syncStatus === 'synced' ? 'bg-green-50 text-green-600 border-green-200' : 'bg-blue-50 text-blue-600 border-blue-200'}`}>
-                {syncStatus === 'syncing' ? <RefreshCw size={12} className="animate-spin" /> : <Cloud size={12} />}
-                <span>{syncStatus === 'synced' ? `SINCRO: ${lastSyncTime}` : 'SINCRONIZANDO...'}</span>
+              <div className="flex items-center justify-between px-2">
+                <div className={`flex items-center gap-2 px-4 py-2 rounded-full text-[10px] font-black border ${syncStatus === 'synced' ? 'bg-green-50 text-green-600 border-green-200' : 'bg-blue-50 text-blue-600 border-blue-200'}`}>
+                  {syncStatus === 'syncing' ? <RefreshCw size={12} className="animate-spin" /> : <Cloud size={12} />}
+                  <span>{syncStatus === 'synced' ? `SINCRO: ${lastSyncTime}` : 'SINCRONIZANDO...'}</span>
+                </div>
+                <button onClick={handleLogout} className="p-2 text-red-600 bg-red-50 rounded-xl hover:bg-red-100"><LogOut size={16}/></button>
               </div>
               <h2 className={`text-2xl font-black tracking-tight ${isPaused ? 'text-orange-500' : 'text-gray-800'}`}>{isPaused ? 'PAUSADO' : (isSetupMode ? 'SETUP EM CURSO' : 'EM PRODUÇÃO')}</h2>
               <div className={`p-6 sm:p-10 rounded-[2rem] sm:rounded-[3rem] font-mono text-4xl sm:text-6xl md:text-7xl border-4 transition-all duration-500 shadow-2xl flex items-center justify-center leading-none ${isPaused ? 'bg-orange-50 text-orange-600 border-orange-200' : 'bg-gray-900 text-green-400 border-gray-800 shadow-blue-100'}`}>{formatDuration(timer)}</div>
@@ -505,7 +533,7 @@ const App: React.FC = () => {
                 <div className="space-y-4">
                   <button onClick={handlePause} className="w-full bg-orange-500 text-white font-black py-5 rounded-3xl flex items-center justify-center gap-3 shadow-xl active:scale-95"><Pause size={20} /> PAUSAR OPERAÇÃO</button>
                   {isSetupMode ? (
-                    <button onClick={() => { setIsSetupMode(false); setProdData(p => ({ ...p, setupDurationSeconds: timer })); setTimerStartTime(Date.now()); setTimer(0); persistSession({ isSetupMode: false, timestamp: Date.now(), setupDurationSeconds: timer }); }} className="w-full bg-green-600 text-white font-black py-5 rounded-3xl shadow-xl active:scale-95">CONCLUIR SETUP</button>
+                    <button onClick={() => { setIsSetupMode(false); setProdData(p => ({ ...p, setupDurationSeconds: timer })); setTimerStartTime(Date.now()); setTimer(0); setPhasePauseMs(0); persistSession({ isSetupMode: false, timestamp: Date.now(), setupDurationSeconds: timer, phasePauseMs: 0 }); }} className="w-full bg-green-600 text-white font-black py-5 rounded-3xl shadow-xl active:scale-95">CONCLUIR SETUP</button>
                   ) : (
                     <button onClick={finishProduction} className="w-full bg-red-600 text-white font-black py-5 rounded-3xl shadow-xl active:scale-95">FINALIZAR OP</button>
                   )}
@@ -531,7 +559,7 @@ const App: React.FC = () => {
                  <div className="bg-indigo-600 p-4 rounded-2xl text-white shadow-lg group-hover:-rotate-12 transition-transform"><LayoutDashboard size={28} /></div>
                  <div className="text-left"><span className="block font-black text-gray-800">MÓDULO DE GESTÃO</span><span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">BI & Dashboards</span></div>
                </button>
-               <button onClick={() => {setUser(null); setStep(AppStep.LOGIN)}} className="w-full mt-8 flex items-center justify-center gap-2 text-gray-400 font-black text-[10px] tracking-[0.3em]"><LogOut size={16} /> ENCERRAR SESSÃO</button>
+               <button onClick={handleLogout} className="w-full mt-8 flex items-center justify-center gap-2 text-gray-400 font-black text-[10px] tracking-[0.3em]"><LogOut size={16} /> ENCERRAR SESSÃO</button>
             </div>
           )}
 
@@ -561,7 +589,6 @@ const App: React.FC = () => {
                 </button>
               </div>
               
-              {/* Painel de Filtros Analíticos */}
               <div className="bg-gray-50 p-6 rounded-[2.5rem] border border-gray-200 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 shadow-inner">
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1"><Users size={12}/> Operador</label>
@@ -591,7 +618,6 @@ const App: React.FC = () => {
                 </div>
               ) : (
                 <>
-                  {/* Gráficos de Resultados */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm min-h-[400px]">
                       <h4 className="text-[10px] font-black text-gray-400 uppercase mb-6 tracking-[0.2em] flex items-center gap-2"><TrendingUp size={14} className="text-blue-500"/> Volume de Peças por Dia</h4>
@@ -630,7 +656,6 @@ const App: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* IMEK AI Insights */}
                   <div className="bg-gradient-to-br from-gray-900 via-blue-900 to-indigo-900 p-10 rounded-[3rem] text-white shadow-2xl relative overflow-hidden group">
                     <div className="relative z-10">
                       <div className="flex items-center gap-4 mb-6">
@@ -670,7 +695,14 @@ const App: React.FC = () => {
                  </div>
                  
                  <div className="flex flex-wrap items-center gap-3">
-                   <div className="bg-gray-100 p-2 rounded-2xl border border-gray-200 flex items-center gap-3">
+                   <div className="bg-gray-100 p-2 rounded-2xl border border-gray-200 flex flex-wrap items-center gap-3">
+                     <div className="flex flex-col px-2 border-r border-gray-300">
+                       <span className="text-[8px] font-black text-gray-400 uppercase">Operador</span>
+                       <select value={recordsOperatorFilter} onChange={e => setRecordsOperatorFilter(e.target.value)} className="bg-transparent text-[10px] font-black outline-none w-28">
+                         <option value="ALL">Todos</option>
+                         {uniqueOperators.map(op => <option key={op} value={op}>{op}</option>)}
+                       </select>
+                     </div>
                      <div className="flex flex-col px-2 border-r border-gray-300">
                        <span className="text-[8px] font-black text-gray-400 uppercase">Início</span>
                        <input type="date" value={tableStartDate} onChange={e => setTableStartDate(e.target.value)} className="bg-transparent text-[10px] font-black outline-none w-24" />
@@ -731,7 +763,6 @@ const App: React.FC = () => {
               </div>
               
               <div className="space-y-4">
-                {/* Aproveitamento Atual */}
                 <div className="bg-blue-600 p-8 rounded-[2.5rem] text-white shadow-2xl shadow-blue-200 relative overflow-hidden">
                   <div className="relative z-10">
                     <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-60">Eficiência de Hoje</p>
@@ -743,7 +774,6 @@ const App: React.FC = () => {
                   <div className="absolute top-0 right-0 p-8 opacity-10"><TrendingUp size={100} /></div>
                 </div>
 
-                {/* Aproveitamento Ontem */}
                 <div className="bg-white p-6 rounded-[2rem] border border-gray-100 flex items-center justify-between shadow-sm">
                    <div>
                      <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Aproveitamento Ontem</p>
@@ -781,7 +811,7 @@ const App: React.FC = () => {
               <div className="grid grid-cols-2 gap-4">
                  <div className="bg-blue-50 p-6 rounded-[2rem] border border-blue-100">
                     <span className="text-[9px] text-blue-400 font-black uppercase tracking-widest block mb-2">TEMPO DE PRODUÇÃO</span>
-                    <span className="text-2xl font-black text-blue-700">{formatDuration(timer)}</span>
+                    <span className="text-2xl font-black text-blue-700">{formatDuration(finalDuration !== null ? finalDuration : timer)}</span>
                  </div>
                  <div className="bg-orange-50 p-6 rounded-[2rem] border border-orange-100">
                     <span className="text-[9px] text-orange-400 font-black uppercase tracking-widest block mb-2">TEMPO DE PAUSAS</span>
@@ -825,9 +855,8 @@ const App: React.FC = () => {
         </div>
       </div>
       
-      {/* Rodapé informativo */}
       <div className="mt-8 text-center text-gray-400 font-black text-[9px] uppercase tracking-[0.3em]">
-        IMEK SLEEVE v1.11.0 • POWERED BY GEMINI 3 PRO
+        IMEK SLEEVE v1.12.0 • POWERED BY GEMINI 3 PRO
       </div>
     </div>
   );

@@ -1,31 +1,18 @@
 
 # Histórico de Desenvolvimento - IMEK Gestão de Produção
 
-## [v1.10.3] - Refinamento de Relatórios
+## [v1.12.0] - Correções de Lógica e Usabilidade
 - **Data**: 30 de Janeiro de 2026
 - **Mudanças**:
-    - **Exportação Excel**: Reestruturação das colunas do relatório para incluir horários de início/fim e durações líquidas.
-    - **Formatação**: Implementado formato `HH:mm:ss` para todas as colunas de tempo na planilha exportada.
+    - **Cronômetro**: Corrigido bug onde pausas de setup interferiam no tempo inicial da produção. Agora o tempo de fase é resetado corretamente ao trocar de modo.
+    - **Finalização**: Implementado "congelamento" do tempo ao clicar em Finalizar OP, evitando que o cronômetro continue rodando na tela de resumo.
+    - **Histórico**: Adicionado filtro por Operador na tela de registros salvos.
+    - **Navegação**: Adicionado botão de encerrar sessão nas telas de Identificação (Passo 1) e Contador (Timer).
+    - **Lógica de Pausa**: Garante que o tempo total de pausas da sessão seja preservado, enquanto o tempo líquido da fase atual é reiniciado.
 
-## [v1.10.2] - Correção de Dados e Dashboards
+## [v1.11.0] - Otimização Responsiva e de Relatórios
 - **Data**: 30 de Janeiro de 2026
 - **Mudanças**:
-    - **Correção Crítica**: Resolvido problema onde a tela de KPIs ficava em branco por falta de sincronização de dados após o login.
-    - **Auto-Sync**: Implementado `useEffect` para carregar registros automaticamente ao acessar módulos de gestão.
-    - **UI/UX**: Adicionados estados de "Nenhum dado encontrado" nos gráficos.
-    - **Refresh**: Botão de atualização manual adicionado ao BI.
-
-## [v1.10.1] - Correção de Build e Refinamento de IA
-- **Data**: 30 de Janeiro de 2026
-- **Mudanças**:
-    - **Build Fix**: Adicionado `@google/genai` ao `package.json` para resolver falha de resolução de módulo no Render.
-    - **IA Update**: Padronização da chamada ao modelo `gemini-3-pro-preview` seguindo as diretrizes da API v3.
-    - **Estabilidade**: Melhoria na lógica de fallbacks para funções de data.
-
-## [v1.10.0] - Dashboard Analítico e IMEK AI
-- **Data**: 30 de Janeiro de 2026
-- **Mudanças**:
-    - **Dashboard de Performance**: Implementação de gráficos avançados (Recharts) com filtros por Operador e Período.
-    - **Linha de Disponibilidade**: Adição de meta de horas diárias no gráfico de tempo para análise de ociosidade.
-    - **IMEK AI**: Integração com Gemini 3 Pro para análise preditiva e insights de produtividade.
-    - **Filtros de Tabela**: Busca por período (Data Início/Fim) na tela de registros salvos.
+    - **UI Responsiva**: Ajuste dinâmico do cronômetro para evitar quebra de layout em telas menores (Mobile).
+    - **Exportação Excel**: Padronização completa das colunas solicitadas: "Data", "Hora Início", "Hora Fim", "Operador", "Máquina", "OP", "CP", "Duração Produção (Líquida)", "Duração Setup (Líquida)", "Total Pausas (Sessão)", "Motivos das Pausas", "Quantidade", "Observação".
+    - **Formatos de Tempo**: Implementado formato `HH:mm:ss` para todas as colunas de tempo e duração na planilha exportada.
