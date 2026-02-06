@@ -467,7 +467,7 @@ const App: React.FC = () => {
                 <span>{syncStatus === 'synced' ? `SINCRO: ${lastSyncTime}` : 'SINCRONIZANDO...'}</span>
               </div>
               <h2 className={`text-2xl font-black tracking-tight ${isPaused ? 'text-orange-500' : 'text-gray-800'}`}>{isPaused ? 'PAUSADO' : (isSetupMode ? 'SETUP EM CURSO' : 'EM PRODUÇÃO')}</h2>
-              <div className={`p-10 rounded-[3rem] font-mono text-6xl border-4 transition-all duration-500 shadow-2xl ${isPaused ? 'bg-orange-50 text-orange-600 border-orange-200' : 'bg-gray-900 text-green-400 border-gray-800 shadow-blue-100'}`}>{formatDuration(timer)}</div>
+              <div className={`p-6 sm:p-10 rounded-[2rem] sm:rounded-[3rem] font-mono text-4xl sm:text-6xl md:text-7xl border-4 transition-all duration-500 shadow-2xl flex items-center justify-center leading-none ${isPaused ? 'bg-orange-50 text-orange-600 border-orange-200' : 'bg-gray-900 text-green-400 border-gray-800 shadow-blue-100'}`}>{formatDuration(timer)}</div>
               
               {!isPaused ? (
                 <div className="space-y-4">
