@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { AppStep, User, UserRole, ProductionRecord, ProductionPause } from './types';
 import { firebaseService, ActiveSession } from './services/firebaseService';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -21,27 +22,38 @@ import {
   ScanLine,
   RefreshCw,
   BrainCircuit,
-  Users
+  Users,
+  SearchX,
+  Database
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-// Fix: Removed parseISO and startOfDay from root import as they were reported as missing exported members.
 import { format, isSameDay, endOfDay, isWithinInterval } from 'date-fns';
+import { GoogleGenAI } from "@google/genai";
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  ResponsiveContainer, 
+  ComposedChart,
+  Line,
+  Legend
+} from 'recharts';
 
-// Helper to parse date strings as local time (replacing parseISO if missing)
+// Helpers de Data
 const parseISO = (dateString: string): Date => {
   if (!dateString) return new Date();
   const [year, month, day] = dateString.split('T')[0].split('-').map(Number);
   return new Date(year, month - 1, day);
 };
 
-// Helper to get start of day (replacing startOfDay if missing)
 const startOfDay = (date: Date | number): Date => {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
   return d;
 };
-
-import { GoogleGenAI } from "@google/genai";
 
 const LOCAL_STORAGE_KEY = 'imek_active_session_v2';
 
@@ -58,18 +70,18 @@ const App: React.FC = () => {
 
   const wakeLockRef = useRef<any>(null);
 
-  // States for Filtered Table (Step SAVED_RECORDS)
+  // Estados de Dados
   const [records, setRecords] = useState<ProductionRecord[]>([]);
   const [tableStartDate, setTableStartDate] = useState(format(startOfDay(new Date()), 'yyyy-MM-01'));
   const [tableEndDate, setTableEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
 
-  // States for Enhanced Analysis (Step ANALYSIS)
+  // Estados de Análise
   const [analysisOperator, setAnalysisOperator] = useState('ALL');
   const [analysisStartDate, setAnalysisStartDate] = useState(format(startOfDay(new Date()), 'yyyy-MM-01'));
   const [analysisEndDate, setAnalysisEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [availableHoursPerDay, setAvailableHoursPerDay] = useState(8.8);
 
-  // Production timer states
+  // Estados do Timer
   const [prodData, setProdData] = useState<Partial<ProductionRecord>>({
     maquina: '', op: '', cp: '', durationSeconds: 0, setupDurationSeconds: 0, totalPauseSeconds: 0, pauses: [], quantity: 0, observation: ''
   });
@@ -84,6 +96,29 @@ const App: React.FC = () => {
   const [phasePauseMs, setPhasePauseMs] = useState(0); 
   const [totalPauseMs, setTotalPauseMs] = useState(0);
   const [pausesList, setPausesList] = useState<ProductionPause[]>([]);
+
+  // Função centralizada para buscar registros
+  const fetchRecords = useCallback(async (showLoading = true) => {
+    if (showLoading) setLoading(true);
+    try {
+      const allRecords = await firebaseService.getAllRecords();
+      setRecords(allRecords);
+      setSyncStatus('synced');
+      setLastSyncTime(format(new Date(), 'HH:mm:ss'));
+    } catch (err) {
+      console.error("Erro ao buscar registros:", err);
+      setSyncStatus('error');
+    } finally {
+      if (showLoading) setLoading(false);
+    }
+  }, []);
+
+  // Sincronizar dados automaticamente ao mudar para telas de gestão
+  useEffect(() => {
+    if (user?.role === UserRole.ADMIN && [AppStep.GESTÃO_PRODUCAO, AppStep.ANALYSIS, AppStep.SAVED_RECORDS].includes(step)) {
+      fetchRecords(records.length === 0); // Só mostra loading se estiver vazio
+    }
+  }, [step, user, fetchRecords, records.length]);
 
   const requestWakeLock = async () => {
     if ('wakeLock' in navigator) {
@@ -170,8 +205,7 @@ const App: React.FC = () => {
       const loggedUser = await firebaseService.loginUser(username, password);
       if (loggedUser) {
         setUser(loggedUser);
-        const allRecords = await firebaseService.getAllRecords();
-        setRecords(allRecords);
+        await fetchRecords();
         setStep(loggedUser.role === UserRole.ADMIN ? AppStep.ADMIN_MENU : AppStep.IDENTIFICATION);
       } else { setError('Usuário ou senha inválidos.'); }
     } catch (err) { setError('Erro ao conectar.'); } finally { setLoading(false); }
@@ -225,7 +259,8 @@ const App: React.FC = () => {
       };
       await firebaseService.saveRecord(rec);
       if (user) { await firebaseService.deleteActiveSession(user.id); localStorage.removeItem(`${LOCAL_STORAGE_KEY}_${user.id}`); }
-      setRecords(await firebaseService.getAllRecords()); setStep(AppStep.COMPLETED);
+      await fetchRecords(); 
+      setStep(AppStep.COMPLETED);
     } catch (err) { setError('Erro ao salvar registro.'); } finally { setLoading(false); }
   };
 
@@ -236,7 +271,7 @@ const App: React.FC = () => {
     return `${h}:${m}:${sec}`;
   };
 
-  // --- FILTERS AND CHARTS LOGIC ---
+  // --- LOGICA DE FILTROS E GRAFICOS ---
 
   const filteredTableRecords = useMemo(() => {
     const start = startOfDay(parseISO(tableStartDate)).getTime();
@@ -250,6 +285,8 @@ const App: React.FC = () => {
   }, [records]);
 
   const analysisChartData = useMemo(() => {
+    if (!records || records.length === 0) return [];
+    
     const start = startOfDay(parseISO(analysisStartDate)).getTime();
     const end = endOfDay(parseISO(analysisEndDate)).getTime();
     const filtered = records.filter(r => {
@@ -328,6 +365,13 @@ const App: React.FC = () => {
     XLSX.utils.book_append_sheet(wb, ws, 'Relatorio_IMEK');
     XLSX.writeFile(wb, `IMEK_Producao_${tableStartDate}_ate_${tableEndDate}.xlsx`);
   };
+
+  const EmptyState = ({ message }: { message: string }) => (
+    <div className="flex flex-col items-center justify-center py-20 text-gray-400 space-y-4">
+      <div className="bg-gray-100 p-6 rounded-full"><SearchX size={48} className="opacity-40" /></div>
+      <p className="text-sm font-bold uppercase tracking-widest">{message}</p>
+    </div>
+  );
 
   const ScannerOverlay = () => {
     useEffect(() => {
@@ -480,6 +524,9 @@ const App: React.FC = () => {
                   <button onClick={() => setStep(AppStep.GESTÃO_PRODUCAO)} className="p-3 bg-gray-100 rounded-2xl"><ArrowLeft size={18} /></button>
                   <h2 className="text-2xl font-black text-gray-800">ANÁLISE E INDICADORES</h2>
                 </div>
+                <button onClick={() => fetchRecords()} className="p-3 bg-blue-50 text-blue-600 rounded-2xl hover:bg-blue-100 flex items-center gap-2 text-xs font-black uppercase tracking-widest transition-all">
+                  <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> ATUALIZAR
+                </button>
               </div>
               
               {/* Painel de Filtros Analíticos */}
@@ -505,64 +552,77 @@ const App: React.FC = () => {
                 </div>
               </div>
 
-              {/* Gráficos de Resultados */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm">
-                  <h4 className="text-[10px] font-black text-gray-400 uppercase mb-6 tracking-[0.2em] flex items-center gap-2"><TrendingUp size={14} className="text-blue-500"/> Volume de Peças por Dia</h4>
-                  <div className="h-64 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={analysisChartData}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                        <XAxis dataKey="dateLabel" axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: 700}} />
-                        <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: 700}} />
-                        <Tooltip contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.1)'}} cursor={{fill: '#f8fafc'}} />
-                        <Bar dataKey="quantity" name="Peças" fill="#3b82f6" radius={[6, 6, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
+              {loading && records.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-40 space-y-4">
+                  <RefreshCw size={48} className="text-blue-500 animate-spin opacity-20" />
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em]">Carregando base de dados...</p>
                 </div>
-
-                <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm">
-                  <h4 className="text-[10px] font-black text-gray-400 uppercase mb-6 tracking-[0.2em] flex items-center gap-2"><Clock size={14} className="text-green-500"/> Eficiência Produtiva (Horas)</h4>
-                  <div className="h-64 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart data={analysisChartData}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                        <XAxis dataKey="dateLabel" axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: 700}} />
-                        <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: 700}} />
-                        <Tooltip contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.1)'}} cursor={{fill: '#f8fafc'}} />
-                        <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{fontSize: '10px', fontWeight: 700, paddingBottom: '20px'}} />
-                        <Bar dataKey="prodHours" name="Horas Reais" fill="#10b981" radius={[6, 6, 0, 0]} />
-                        <Line type="monotone" dataKey="meta" name="Meta (Disponibilidade)" stroke="#ef4444" strokeWidth={2} dot={false} strokeDasharray="8 4" />
-                      </ComposedChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-              </div>
-
-              {/* IMEK AI Insights */}
-              <div className="bg-gradient-to-br from-gray-900 via-blue-900 to-indigo-900 p-10 rounded-[3rem] text-white shadow-2xl relative overflow-hidden group">
-                <div className="relative z-10">
-                  <div className="flex items-center gap-4 mb-6">
-                    <div className="bg-blue-500/30 p-3 rounded-2xl backdrop-blur-md border border-blue-400/20"><Sparkles size={28} className="text-blue-200" /></div>
-                    <h3 className="text-2xl font-black tracking-tight">IMEK AI INSIGHTS</h3>
-                  </div>
-                  {!aiInsights ? (
-                    <button onClick={generateAIInsights} disabled={loading} className="bg-white text-gray-900 font-black px-10 py-5 rounded-2xl flex items-center gap-3 hover:bg-blue-50 transition-all shadow-xl active:scale-95 disabled:opacity-50">
-                      {loading ? <RefreshCw size={20} className="animate-spin" /> : <BrainCircuit size={20} />}
-                      GERAR DIAGNÓSTICO INTELIGENTE
-                    </button>
-                  ) : (
-                    <div className="p-8 rounded-3xl bg-white/5 backdrop-blur-2xl border border-white/10 text-sm leading-relaxed space-y-4 animate-in slide-in-from-bottom-5 duration-700">
-                      <div className="prose prose-invert max-w-none text-blue-50 font-medium">
-                        {aiInsights.split('\n').map((line, i) => <p key={i} className="mb-2">{line}</p>)}
+              ) : (
+                <>
+                  {/* Gráficos de Resultados */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm min-h-[400px]">
+                      <h4 className="text-[10px] font-black text-gray-400 uppercase mb-6 tracking-[0.2em] flex items-center gap-2"><TrendingUp size={14} className="text-blue-500"/> Volume de Peças por Dia</h4>
+                      <div className="h-64 w-full">
+                        {analysisChartData.length > 0 ? (
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={analysisChartData}>
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                              <XAxis dataKey="dateLabel" axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: 700}} />
+                              <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: 700}} />
+                              <Tooltip contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.1)'}} cursor={{fill: '#f8fafc'}} />
+                              <Bar dataKey="quantity" name="Peças" fill="#3b82f6" radius={[6, 6, 0, 0]} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        ) : <EmptyState message="Nenhum dado encontrado para este volume" />}
                       </div>
-                      <button onClick={() => setAiInsights(null)} className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-400 mt-6 block hover:text-white transition-colors">Nova Análise</button>
                     </div>
-                  )}
-                </div>
-                <div className="absolute top-0 right-0 p-12 opacity-5 pointer-events-none group-hover:scale-110 transition-transform duration-1000"><BrainCircuit size={180} /></div>
-              </div>
+
+                    <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm min-h-[400px]">
+                      <h4 className="text-[10px] font-black text-gray-400 uppercase mb-6 tracking-[0.2em] flex items-center gap-2"><Clock size={14} className="text-green-500"/> Eficiência Produtiva (Horas)</h4>
+                      <div className="h-64 w-full">
+                        {analysisChartData.length > 0 ? (
+                          <ResponsiveContainer width="100%" height="100%">
+                            <ComposedChart data={analysisChartData}>
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                              <XAxis dataKey="dateLabel" axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: 700}} />
+                              <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: 700}} />
+                              <Tooltip contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.1)'}} cursor={{fill: '#f8fafc'}} />
+                              <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{fontSize: '10px', fontWeight: 700, paddingBottom: '20px'}} />
+                              <Bar dataKey="prodHours" name="Horas Reais" fill="#10b981" radius={[6, 6, 0, 0]} />
+                              <Line type="monotone" dataKey="meta" name="Meta (Disponibilidade)" stroke="#ef4444" strokeWidth={2} dot={false} strokeDasharray="8 4" />
+                            </ComposedChart>
+                          </ResponsiveContainer>
+                        ) : <EmptyState message="Nenhuma hora produtiva registrada" />}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* IMEK AI Insights */}
+                  <div className="bg-gradient-to-br from-gray-900 via-blue-900 to-indigo-900 p-10 rounded-[3rem] text-white shadow-2xl relative overflow-hidden group">
+                    <div className="relative z-10">
+                      <div className="flex items-center gap-4 mb-6">
+                        <div className="bg-blue-500/30 p-3 rounded-2xl backdrop-blur-md border border-blue-400/20"><Sparkles size={28} className="text-blue-200" /></div>
+                        <h3 className="text-2xl font-black tracking-tight">IMEK AI INSIGHTS</h3>
+                      </div>
+                      {!aiInsights ? (
+                        <button onClick={generateAIInsights} disabled={loading || analysisChartData.length === 0} className="bg-white text-gray-900 font-black px-10 py-5 rounded-2xl flex items-center gap-3 hover:bg-blue-50 transition-all shadow-xl active:scale-95 disabled:opacity-50">
+                          {loading ? <RefreshCw size={20} className="animate-spin" /> : <BrainCircuit size={20} />}
+                          GERAR DIAGNÓSTICO INTELIGENTE
+                        </button>
+                      ) : (
+                        <div className="p-8 rounded-3xl bg-white/5 backdrop-blur-2xl border border-white/10 text-sm leading-relaxed space-y-4 animate-in slide-in-from-bottom-5 duration-700">
+                          <div className="prose prose-invert max-w-none text-blue-50 font-medium">
+                            {aiInsights.split('\n').map((line, i) => <p key={i} className="mb-2">{line}</p>)}
+                          </div>
+                          <button onClick={() => setAiInsights(null)} className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-400 mt-6 block hover:text-white transition-colors">Nova Análise</button>
+                        </div>
+                      )}
+                    </div>
+                    <div className="absolute top-0 right-0 p-12 opacity-5 pointer-events-none group-hover:scale-110 transition-transform duration-1000"><BrainCircuit size={180} /></div>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
@@ -589,36 +649,44 @@ const App: React.FC = () => {
                      </div>
                    </div>
                    <button onClick={exportFilteredToExcel} className="bg-green-600 text-white px-8 py-4 rounded-2xl flex items-center gap-2 text-xs font-black shadow-lg shadow-green-100 hover:bg-green-700 transition-all active:scale-95"><Download size={18} /> EXPORTAR EXCEL</button>
+                   <button onClick={() => fetchRecords()} className="p-4 bg-blue-50 text-blue-600 rounded-2xl shadow-sm"><RefreshCw size={18} className={loading ? 'animate-spin' : ''} /></button>
                  </div>
                </div>
 
-               <div className="overflow-x-auto rounded-[2.5rem] border border-gray-100 shadow-xl shadow-gray-200/50 bg-white">
-                 <table className="w-full text-left text-xs">
-                   <thead className="bg-gray-50/80 text-gray-400 font-black uppercase text-[9px] tracking-[0.15em]">
-                     <tr>
-                       <th className="px-8 py-6">Data</th>
-                       <th className="px-6 py-6">Equipamento</th>
-                       <th className="px-6 py-6">Ordem (OP)</th>
-                       <th className="px-6 py-6">Operador</th>
-                       <th className="px-6 py-6 text-center">Qtde</th>
-                       <th className="px-8 py-6 text-right">Tempo Total</th>
-                     </tr>
-                   </thead>
-                   <tbody className="divide-y divide-gray-50">
-                     {filteredTableRecords.length > 0 ? filteredTableRecords.map(r => (
-                       <tr key={r.id} className="hover:bg-blue-50/50 transition-colors group">
-                         <td className="px-8 py-5 font-bold text-gray-400">{format(new Date(r.timestamp), 'dd/MM/yy')}</td>
-                         <td className="px-6 py-5 font-black text-gray-700 uppercase">{r.maquina}</td>
-                         <td className="px-6 py-5 text-blue-600 font-black">{r.op}</td>
-                         <td className="px-6 py-5 text-[10px] font-bold text-gray-500 uppercase">{r.operador}</td>
-                         <td className="px-6 py-5 text-center"><span className="bg-blue-50 text-blue-700 px-4 py-2 rounded-xl font-black">{r.quantity}</span></td>
-                         <td className="px-8 py-5 text-right font-black text-green-600">{formatDuration(r.durationSeconds + r.setupDurationSeconds)}</td>
+               <div className="overflow-x-auto rounded-[2.5rem] border border-gray-100 shadow-xl shadow-gray-200/50 bg-white min-h-[400px]">
+                 {loading && records.length === 0 ? (
+                   <div className="flex flex-col items-center justify-center py-40">
+                      <RefreshCw size={32} className="animate-spin text-blue-500 mb-4" />
+                      <p className="text-[10px] font-black text-gray-300 tracking-widest">SINCRO FIREBASE...</p>
+                   </div>
+                 ) : (
+                   <table className="w-full text-left text-xs">
+                     <thead className="bg-gray-50/80 text-gray-400 font-black uppercase text-[9px] tracking-[0.15em]">
+                       <tr>
+                         <th className="px-8 py-6">Data</th>
+                         <th className="px-6 py-6">Equipamento</th>
+                         <th className="px-6 py-6">Ordem (OP)</th>
+                         <th className="px-6 py-6">Operador</th>
+                         <th className="px-6 py-6 text-center">Qtde</th>
+                         <th className="px-8 py-6 text-right">Tempo Total</th>
                        </tr>
-                     )) : (
-                       <tr><td colSpan={6} className="px-8 py-20 text-center text-gray-400 font-bold italic">Nenhum registro para este período.</td></tr>
-                     )}
-                   </tbody>
-                 </table>
+                     </thead>
+                     <tbody className="divide-y divide-gray-50">
+                       {filteredTableRecords.length > 0 ? filteredTableRecords.map(r => (
+                         <tr key={r.id} className="hover:bg-blue-50/50 transition-colors group">
+                           <td className="px-8 py-5 font-bold text-gray-400">{format(new Date(r.timestamp), 'dd/MM/yy')}</td>
+                           <td className="px-6 py-5 font-black text-gray-700 uppercase">{r.maquina}</td>
+                           <td className="px-6 py-5 text-blue-600 font-black">{r.op}</td>
+                           <td className="px-6 py-5 text-[10px] font-bold text-gray-500 uppercase">{r.operador}</td>
+                           <td className="px-6 py-5 text-center"><span className="bg-blue-50 text-blue-700 px-4 py-2 rounded-xl font-black">{r.quantity}</span></td>
+                           <td className="px-8 py-5 text-right font-black text-green-600">{formatDuration(r.durationSeconds + r.setupDurationSeconds)}</td>
+                         </tr>
+                       )) : (
+                         <tr><td colSpan={6}><EmptyState message="Nenhum registro para este período." /></td></tr>
+                       )}
+                     </tbody>
+                   </table>
+                 )}
                </div>
             </div>
           )}
@@ -713,7 +781,7 @@ const App: React.FC = () => {
       
       {/* Rodapé informativo */}
       <div className="mt-8 text-center text-gray-400 font-black text-[9px] uppercase tracking-[0.3em]">
-        IMEK SLEEVE v1.10.1 • POWERED BY GEMINI 3 PRO
+        IMEK SLEEVE v1.10.2 • POWERED BY GEMINI 3 PRO
       </div>
     </div>
   );

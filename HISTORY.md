@@ -1,6 +1,14 @@
 
 # Histórico de Desenvolvimento - IMEK Gestão de Produção
 
+## [v1.10.2] - Correção de Dados e Dashboards
+- **Data**: 30 de Janeiro de 2026
+- **Mudanças**:
+    - **Correção Crítica**: Resolvido problema onde a tela de KPIs ficava em branco por falta de sincronização de dados após o login.
+    - **Auto-Sync**: Implementado `useEffect` para carregar registros automaticamente ao acessar módulos de gestão.
+    - **UI/UX**: Adicionados estados de "Nenhum dado encontrado" nos gráficos.
+    - **Refresh**: Botão de atualização manual adicionado ao BI.
+
 ## [v1.10.1] - Correção de Build e Refinamento de IA
 - **Data**: 30 de Janeiro de 2026
 - **Mudanças**:
@@ -15,17 +23,3 @@
     - **Linha de Disponibilidade**: Adição de meta de horas diárias no gráfico de tempo para análise de ociosidade.
     - **IMEK AI**: Integração com Gemini 3 Pro para análise preditiva e insights de produtividade.
     - **Filtros de Tabela**: Busca por período (Data Início/Fim) na tela de registros salvos.
-
-## [v1.9.0] - Persistência e Segurança Mobile
-- **Data**: 30 de Janeiro de 2026
-- **Mudanças**:
-    - **LocalStorage + Firebase**: Sistema de salvamento híbrido para evitar perda de dados.
-    - **Wake Lock API**: Prevenção de suspensão da tela/processo em dispositivos mobile.
-    - **Sync Heartbeat**: Sincronização automática a cada 60 segundos.
-
-## [v1.8.0] - Gestão de Pausas com Motivo
-- **Data**: 29 de Janeiro de 2026
-- **Mudanças**:
-    - **Funcionalidade de Pausa**: Botão adicionado aos cronômetros.
-    - **Registro de Motivo**: Obrigatoriedade de informar o motivo da pausa.
-    - **Cálculo de Tempo Líquido**: Desconto automático de pausas no tempo de produção.
