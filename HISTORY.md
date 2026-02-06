@@ -1,6 +1,13 @@
 
 # Histórico de Desenvolvimento - IMEK Gestão de Produção
 
+## [v1.10.1] - Correção de Build e Refinamento de IA
+- **Data**: 30 de Janeiro de 2026
+- **Mudanças**:
+    - **Build Fix**: Adicionado `@google/genai` ao `package.json` para resolver falha de resolução de módulo no Render.
+    - **IA Update**: Padronização da chamada ao modelo `gemini-3-pro-preview` seguindo as diretrizes da API v3.
+    - **Estabilidade**: Melhoria na lógica de fallbacks para funções de data.
+
 ## [v1.10.0] - Dashboard Analítico e IMEK AI
 - **Data**: 30 de Janeiro de 2026
 - **Mudanças**:
