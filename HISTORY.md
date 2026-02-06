@@ -1,6 +1,11 @@
 
 # Histórico de Desenvolvimento - IMEK Gestão de Produção
 
+## [v1.12.1] - Correção de Persistência de Dados
+- **Data**: 30 de Janeiro de 2026
+- **Mudanças**:
+    - **Bug Fix**: Agora os campos de OP, CP e Quantidade são resetados automaticamente ao clicar em "Novo Apontamento", garantindo que dados da operação anterior não permaneçam no formulário.
+
 ## [v1.12.0] - Correções de Lógica e Usabilidade
 - **Data**: 30 de Janeiro de 2026
 - **Mudanças**:

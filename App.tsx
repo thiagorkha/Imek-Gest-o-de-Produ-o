@@ -233,6 +233,19 @@ const App: React.FC = () => {
     releaseWakeLock();
   };
 
+  const handleNewAppointment = () => {
+    setProdData(prev => ({ 
+      ...prev, 
+      op: '', 
+      cp: '', 
+      quantity: 0,
+      observation: '',
+      setupDurationSeconds: 0,
+      durationSeconds: 0
+    }));
+    setStep(AppStep.IDENTIFICATION);
+  };
+
   const startProduction = async (mode: 'setup' | 'direct') => {
     if (!prodData.maquina || !prodData.op || !prodData.cp) { setError('Preencha os campos obrigatórios.'); return; }
     setLoading(true); const now = Date.now();
@@ -551,7 +564,7 @@ const App: React.FC = () => {
           {step === AppStep.ADMIN_MENU && (
             <div className="space-y-4">
                <h2 className="text-2xl font-black text-center mb-6 text-gray-800">CENTRAL DO GESTOR</h2>
-               <button onClick={() => setStep(AppStep.IDENTIFICATION)} className="w-full flex items-center gap-5 p-6 bg-blue-50 rounded-[2rem] border border-blue-100 group active:scale-95 transition-all">
+               <button onClick={handleNewAppointment} className="w-full flex items-center gap-5 p-6 bg-blue-50 rounded-[2rem] border border-blue-100 group active:scale-95 transition-all">
                  <div className="bg-blue-600 p-4 rounded-2xl text-white shadow-lg group-hover:rotate-12 transition-transform"><ClipboardCheck size={28} /></div>
                  <div className="text-left"><span className="block font-black text-gray-800">NOVO APONTAMENTO</span><span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Chão de Fábrica</span></div>
                </button>
@@ -848,7 +861,7 @@ const App: React.FC = () => {
                 <h2 className="text-4xl font-black text-gray-900 tracking-tighter">SUCESSO!</h2>
                 <p className="text-gray-400 font-bold uppercase text-[10px] tracking-widest">Os dados foram salvos e sincronizados.</p>
               </div>
-              <button onClick={() => setStep(user?.role === UserRole.ADMIN ? AppStep.ADMIN_MENU : AppStep.IDENTIFICATION)} className="w-full bg-blue-600 text-white font-black py-5 rounded-3xl shadow-2xl shadow-blue-200 hover:bg-blue-700 transition-all active:scale-95">NOVO APONTAMENTO</button>
+              <button onClick={handleNewAppointment} className="w-full bg-blue-600 text-white font-black py-5 rounded-3xl shadow-2xl shadow-blue-200 hover:bg-blue-700 transition-all active:scale-95">NOVO APONTAMENTO</button>
             </div>
           )}
 
@@ -856,7 +869,7 @@ const App: React.FC = () => {
       </div>
       
       <div className="mt-8 text-center text-gray-400 font-black text-[9px] uppercase tracking-[0.3em]">
-        IMEK SLEEVE v1.12.0 • POWERED BY GEMINI 3 PRO
+        IMEK SLEEVE v1.12.1 • POWERED BY GEMINI 3 PRO
       </div>
     </div>
   );
