@@ -1,14 +1,24 @@
 
 # Histórico de Desenvolvimento - IMEK Gestão de Produção
 
+## [v1.10.0] - Dashboard Analítico e IMEK AI
+- **Data**: 30 de Janeiro de 2026
+- **Mudanças**:
+    - **Dashboard de Performance**: Implementação de gráficos avançados (Recharts) com filtros por Operador e Período.
+    - **Linha de Disponibilidade**: Adição de meta de horas diárias no gráfico de tempo para análise de ociosidade.
+    - **IMEK AI**: Integração com Gemini 3 Pro para análise preditiva e insights de produtividade.
+    - **Filtros de Tabela**: Busca por período (Data Início/Fim) na tela de registros salvos.
+
+## [v1.9.0] - Persistência e Segurança Mobile
+- **Data**: 30 de Janeiro de 2026
+- **Mudanças**:
+    - **LocalStorage + Firebase**: Sistema de salvamento híbrido para evitar perda de dados.
+    - **Wake Lock API**: Prevenção de suspensão da tela/processo em dispositivos mobile.
+    - **Sync Heartbeat**: Sincronização automática a cada 60 segundos.
+
 ## [v1.8.0] - Gestão de Pausas com Motivo
 - **Data**: 29 de Janeiro de 2026
 - **Mudanças**:
-    - **Funcionalidade de Pausa**: Botão adicionado aos cronômetros de Setup e Produção.
-    - **Registro de Motivo**: Obrigatoriedade de informar o motivo da pausa antes de retomar.
-    - **Cálculo de Tempo Líquido**: O cronômetro agora desconta automaticamente o tempo total de pausas do tempo de produção.
-    - **Persistência de Pausa**: Se o app for fechado durante uma pausa, ele retornará no estado pausado com o tempo congelado corretamente.
-    - **Exportação Aprimorada**: O relatório em Excel agora inclui uma coluna com a duração total das pausas por apontamento.
-
-## [v1.7.0] - Dashboard de Produção Diária (Operador)
-... (restante do histórico)
+    - **Funcionalidade de Pausa**: Botão adicionado aos cronômetros.
+    - **Registro de Motivo**: Obrigatoriedade de informar o motivo da pausa.
+    - **Cálculo de Tempo Líquido**: Desconto automático de pausas no tempo de produção.
