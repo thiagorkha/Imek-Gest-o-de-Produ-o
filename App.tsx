@@ -27,7 +27,8 @@ import {
   Database
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { format, isSameDay, endOfDay, isWithinInterval } from 'date-fns';
+// Removed subDays and isWithinInterval as they were reported as missing or unused in the provided date-fns version
+import { format, isSameDay, endOfDay } from 'date-fns';
 import { GoogleGenAI } from "@google/genai";
 import { 
   BarChart, 
@@ -53,6 +54,15 @@ const startOfDay = (date: Date | number): Date => {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
   return d;
+};
+
+// Meta de horas dinâmicas por dia da semana
+const getAvailableHours = (date: Date): number => {
+  const day = date.getDay(); // 0 = Domingo, 1 = Segunda...
+  if (day >= 1 && day <= 4) return 9; // Seg a Qui
+  if (day === 5) return 8; // Sex
+  if (day === 6) return 4; // Sab
+  return 0; // Dom
 };
 
 const LOCAL_STORAGE_KEY = 'imek_active_session_v2';
@@ -96,6 +106,11 @@ const App: React.FC = () => {
   const [phasePauseMs, setPhasePauseMs] = useState(0); 
   const [totalPauseMs, setTotalPauseMs] = useState(0);
   const [pausesList, setPausesList] = useState<ProductionPause[]>([]);
+
+  // Limpa mensagens de erro ao mudar de tela
+  useEffect(() => {
+    setError('');
+  }, [step]);
 
   // Função centralizada para buscar registros
   const fetchRecords = useCallback(async (showLoading = true) => {
@@ -317,12 +332,27 @@ const App: React.FC = () => {
   }, [records, analysisOperator, analysisStartDate, analysisEndDate, availableHoursPerDay]);
 
   const dailyStats = useMemo(() => {
-    const today = startOfDay(new Date());
-    const todayRecords = records.filter(r => isSameDay(new Date(r.timestamp), today));
-    const totalHours = todayRecords.reduce((acc, r) => acc + (r.durationSeconds + r.setupDurationSeconds) / 3600, 0);
-    const todayPercent = availableHoursPerDay > 0 ? Math.round((totalHours / availableHoursPerDay) * 100) : 0;
-    return { todayRecords, todayPercent };
-  }, [records, availableHoursPerDay]);
+    if (!user) return { todayRecords: [], todayPercent: 0, yesterdayPercent: 0 };
+    
+    const now = new Date();
+    const today = startOfDay(now);
+    // Fixed: subDays was missing from exports, replaced with native timestamp calculation for "yesterday"
+    const yesterday = startOfDay(new Date(now.getTime() - 86400000));
+
+    const userRecords = records.filter(r => r.operador === user.username);
+    
+    const todayRecords = userRecords.filter(r => isSameDay(new Date(r.timestamp), today));
+    const todayHours = todayRecords.reduce((acc, r) => acc + (r.durationSeconds + r.setupDurationSeconds) / 3600, 0);
+    const todayMeta = getAvailableHours(today);
+    const todayPercent = todayMeta > 0 ? Math.round((todayHours / todayMeta) * 100) : 0;
+
+    const yesterdayRecords = userRecords.filter(r => isSameDay(new Date(r.timestamp), yesterday));
+    const yesterdayHours = yesterdayRecords.reduce((acc, r) => acc + (r.durationSeconds + r.setupDurationSeconds) / 3600, 0);
+    const yesterdayMeta = getAvailableHours(yesterday);
+    const yesterdayPercent = yesterdayMeta > 0 ? Math.round((yesterdayHours / yesterdayMeta) * 100) : 0;
+
+    return { todayRecords, todayPercent, yesterdayPercent };
+  }, [records, user]);
 
   const generateAIInsights = async () => {
     setLoading(true); setAiInsights(null);
@@ -700,15 +730,29 @@ const App: React.FC = () => {
                 <h2 className="text-2xl font-black text-gray-800">MEU DESEMPENHO HOJE</h2>
               </div>
               
-              <div className="bg-blue-600 p-8 rounded-[2.5rem] text-white shadow-2xl shadow-blue-200 relative overflow-hidden">
-                <div className="relative z-10">
-                  <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-60">Percentual de Ocupação</p>
-                  <p className="text-5xl font-black mt-1">{dailyStats.todayPercent}%</p>
-                  <div className="mt-6 bg-white/20 h-4 rounded-full overflow-hidden border border-white/10 shadow-inner">
-                    <div className="bg-white h-full rounded-full transition-all duration-1000 ease-out shadow-[0_0_20px_rgba(255,255,255,0.5)]" style={{ width: `${Math.min(dailyStats.todayPercent, 100)}%` }}></div>
+              <div className="space-y-4">
+                {/* Aproveitamento Atual */}
+                <div className="bg-blue-600 p-8 rounded-[2.5rem] text-white shadow-2xl shadow-blue-200 relative overflow-hidden">
+                  <div className="relative z-10">
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-60">Eficiência de Hoje</p>
+                    <p className="text-5xl font-black mt-1">{dailyStats.todayPercent}%</p>
+                    <div className="mt-6 bg-white/20 h-4 rounded-full overflow-hidden border border-white/10 shadow-inner">
+                      <div className="bg-white h-full rounded-full transition-all duration-1000 ease-out shadow-[0_0_20px_rgba(255,255,255,0.5)]" style={{ width: `${Math.min(dailyStats.todayPercent, 100)}%` }}></div>
+                    </div>
                   </div>
+                  <div className="absolute top-0 right-0 p-8 opacity-10"><TrendingUp size={100} /></div>
                 </div>
-                <div className="absolute top-0 right-0 p-8 opacity-10"><TrendingUp size={100} /></div>
+
+                {/* Aproveitamento Ontem */}
+                <div className="bg-white p-6 rounded-[2rem] border border-gray-100 flex items-center justify-between shadow-sm">
+                   <div>
+                     <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Aproveitamento Ontem</p>
+                     <p className="text-2xl font-black text-gray-700">{dailyStats.yesterdayPercent}%</p>
+                   </div>
+                   <div className={`p-3 rounded-2xl ${dailyStats.yesterdayPercent >= 80 ? 'bg-green-50 text-green-600' : 'bg-orange-50 text-orange-600'}`}>
+                     <Sparkles size={20} />
+                   </div>
+                </div>
               </div>
 
               <div className="space-y-3">
@@ -783,7 +827,7 @@ const App: React.FC = () => {
       
       {/* Rodapé informativo */}
       <div className="mt-8 text-center text-gray-400 font-black text-[9px] uppercase tracking-[0.3em]">
-        IMEK SLEEVE v1.10.3 • POWERED BY GEMINI 3 PRO
+        IMEK SLEEVE v1.11.0 • POWERED BY GEMINI 3 PRO
       </div>
     </div>
   );
