@@ -1,6 +1,12 @@
 
 # Histórico de Desenvolvimento - IMEK Gestão de Produção
 
+## [v1.10.3] - Refinamento de Relatórios
+- **Data**: 30 de Janeiro de 2026
+- **Mudanças**:
+    - **Exportação Excel**: Reestruturação das colunas do relatório para incluir horários de início/fim e durações líquidas.
+    - **Formatação**: Implementado formato `HH:mm:ss` para todas as colunas de tempo na planilha exportada.
+
 ## [v1.10.2] - Correção de Dados e Dashboards
 - **Data**: 30 de Janeiro de 2026
 - **Mudanças**:

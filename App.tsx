@@ -348,17 +348,19 @@ const App: React.FC = () => {
 
   const exportFilteredToExcel = () => {
     const data = filteredTableRecords.map(r => ({ 
-      Data: format(new Date(r.timestamp), 'dd/MM/yyyy'), 
-      Operador: r.operador, 
-      Máquina: r.maquina, 
-      OP: r.op, 
-      CP: r.cp, 
-      Qtde: r.quantity, 
-      'Produção (h)': (r.durationSeconds / 3600).toFixed(2), 
-      'Setup (h)': (r.setupDurationSeconds / 3600).toFixed(2), 
-      'Pausas (h)': (r.totalPauseSeconds / 3600).toFixed(2),
-      Motivos: r.pauseReasons,
-      Observação: r.observation
+      "Data": format(new Date(r.timestamp), 'dd/MM/yyyy'), 
+      "Hora Início": format(new Date(r.startTime), 'HH:mm:ss'),
+      "Hora Fim": format(new Date(r.endTime), 'HH:mm:ss'),
+      "Operador": r.operador, 
+      "Máquina": r.maquina, 
+      "OP": r.op, 
+      "CP": r.cp, 
+      "Duração Produção (Líquida)": formatDuration(r.durationSeconds), 
+      "Duração Setup (Líquida)": formatDuration(r.setupDurationSeconds), 
+      "Total Pausas (Sessão)": formatDuration(r.totalPauseSeconds),
+      "Motivos das Pausas": r.pauseReasons,
+      "Quantidade": r.quantity, 
+      "Observação": r.observation
     }));
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new(); 
@@ -781,7 +783,7 @@ const App: React.FC = () => {
       
       {/* Rodapé informativo */}
       <div className="mt-8 text-center text-gray-400 font-black text-[9px] uppercase tracking-[0.3em]">
-        IMEK SLEEVE v1.10.2 • POWERED BY GEMINI 3 PRO
+        IMEK SLEEVE v1.10.3 • POWERED BY GEMINI 3 PRO
       </div>
     </div>
   );
