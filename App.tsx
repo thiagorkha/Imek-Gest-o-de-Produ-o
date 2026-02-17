@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { AppStep, User, UserRole, ProductionRecord, ProductionPause } from './types';
 import { firebaseService, ActiveSession } from './services/firebaseService';
@@ -225,6 +224,26 @@ const App: React.FC = () => {
         setStep(loggedUser.role === UserRole.ADMIN ? AppStep.ADMIN_MENU : AppStep.IDENTIFICATION);
       } else { setError('Usuário ou senha inválidos.'); }
     } catch (err) { setError('Erro ao conectar.'); } finally { setLoading(false); }
+  };
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    try {
+      await firebaseService.registerUser(username, password);
+      // Login imediato após cadastro
+      const loggedUser = await firebaseService.loginUser(username, password);
+      if (loggedUser) {
+        setUser(loggedUser);
+        await fetchRecords();
+        setStep(loggedUser.role === UserRole.ADMIN ? AppStep.ADMIN_MENU : AppStep.IDENTIFICATION);
+      }
+    } catch (err) {
+      setError('Erro ao registrar usuário. Tente outro nome.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleLogout = () => {
@@ -494,6 +513,24 @@ const App: React.FC = () => {
               <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full p-4 rounded-2xl border border-gray-100 bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none font-medium transition-all" placeholder="Senha" required />
               <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white font-black py-4 rounded-2xl shadow-xl shadow-blue-100 hover:bg-blue-700 transition-all active:scale-95">{loading ? 'Autenticando...' : 'ENTRAR NO SISTEMA'}</button>
               <button type="button" onClick={() => setStep(AppStep.REGISTER)} className="w-full text-blue-600 text-[10px] font-black uppercase tracking-widest py-2">Solicitar Cadastro</button>
+            </form>
+          )}
+
+          {step === AppStep.REGISTER && (
+            <form onSubmit={handleRegister} className="space-y-4 text-left animate-in fade-in">
+              <h2 className="text-2xl font-black text-gray-800 text-center mb-6">SOLICITAR ACESSO</h2>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Nome de Usuário / Email:</label>
+                <input type="text" value={username} onChange={e => setUsername(e.target.value)} className="w-full p-4 rounded-2xl border border-gray-100 bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none font-medium transition-all" placeholder="Ex: joao.silva" required />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Defina sua Senha:</label>
+                <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full p-4 rounded-2xl border border-gray-100 bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none font-medium transition-all" placeholder="••••••••" required />
+              </div>
+              <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white font-black py-4 rounded-2xl shadow-xl shadow-blue-100 hover:bg-blue-700 transition-all active:scale-95">
+                {loading ? 'Processando...' : 'CADASTRAR E ENTRAR'}
+              </button>
+              <button type="button" onClick={() => setStep(AppStep.LOGIN)} className="w-full text-gray-400 font-black text-[10px] uppercase tracking-widest py-4">Voltar para Login</button>
             </form>
           )}
 
@@ -861,7 +898,7 @@ const App: React.FC = () => {
                 <h2 className="text-4xl font-black text-gray-900 tracking-tighter">SUCESSO!</h2>
                 <p className="text-gray-400 font-bold uppercase text-[10px] tracking-widest">Os dados foram salvos e sincronizados.</p>
               </div>
-              <button onClick={handleNewAppointment} className="w-full bg-blue-600 text-white font-black py-5 rounded-3xl shadow-2xl shadow-blue-200 hover:bg-blue-700 transition-all active:scale-95">NOVO APONTAMENTO</button>
+              <button onClick={() => { setProdData(prev => ({ ...prev, op: '', cp: '', quantity: 0 })); setStep(user?.role === UserRole.ADMIN ? AppStep.ADMIN_MENU : AppStep.IDENTIFICATION); }} className="w-full bg-blue-600 text-white font-black py-5 rounded-3xl shadow-2xl shadow-blue-200 hover:bg-blue-700 transition-all active:scale-95">NOVO APONTAMENTO</button>
             </div>
           )}
 
@@ -869,7 +906,7 @@ const App: React.FC = () => {
       </div>
       
       <div className="mt-8 text-center text-gray-400 font-black text-[9px] uppercase tracking-[0.3em]">
-        IMEK SLEEVE v1.12.1 • POWERED BY GEMINI 3 PRO
+        IMEK SLEEVE v1.12.2 • POWERED BY GEMINI 3 PRO
       </div>
     </div>
   );

@@ -1,5 +1,11 @@
-
 # Histórico de Desenvolvimento - IMEK Gestão de Produção
+
+## [v1.12.2] - Implementação da Tela de Cadastro
+- **Data**: 30 de Janeiro de 2026
+- **Mudanças**:
+    - **Funcionalidade**: Implementada a interface de cadastro (`REGISTER`) com campos de usuário e senha.
+    - **UX**: Fluxo de registro agora realiza o login automático imediatamente após a criação da conta, permitindo acesso instantâneo ao sistema.
+    - **Bug Fix**: Resolvido problema onde a tela de solicitação de cadastro estava em branco.
 
 ## [v1.12.1] - Correção de Persistência de Dados
 - **Data**: 30 de Janeiro de 2026
